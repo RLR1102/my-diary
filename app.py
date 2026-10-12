@@ -7,21 +7,17 @@ st.set_page_config(
     page_title="Электронный Журнал", page_icon="🏫", layout="centered"
 )
 
-# --- АДАПТИВНЫЙ SMARTPHONE СТИЛЬ (СТРЕЛКА И МЕНЮ ПОЧИНЕНЫ!) ---
+# --- АДАПТИВНЫЙ SMARTPHONE СТИЛЬ + СКРЫТИЕ GITHUB ---
 st.markdown(
     """
     <style>
-    /* Жестко прячем только иконку GitHub, не ломая мобильное меню-стрелочку */
     #GithubIcon { visibility: hidden !important; display: none !important; }
     .styles_viewerBadge__1yB5_, .viewerBadge_link__1S137, .viewerBadge_text__1JaDK { display: none !important; }
-    
-    /* Стили элементов дневника */
+    [data-testid="stToolbar"] { display: none !important; }
     [data-testid="stSidebar"] { min-width: 250px; max-width: 280px; }
     .report-card-header { margin-top: 15px; margin-bottom: 10px; color: #1E3A8A; font-weight: bold; font-size: 1.2rem; }
     .grade-badge { font-size: 18px; letter-spacing: 2px; color: #2C3E50; font-weight: bold; background-color: #F8F9FA; padding: 3px 8px; border-radius: 5px; border: 1px solid #E2E8F0; }
     .leaderboard-box { padding: 10px; border-radius: 8px; margin-bottom: 10px; text-align: center; font-size: 0.9rem; }
-    
-    /* Стилизация мессенджера под сообщения */
     .chat-bubble { padding: 10px; border-radius: 10px; margin-bottom: 5px; font-size: 0.95rem; line-height: 1.3; }
     .chat-user { font-weight: bold; color: #1E3A8A; }
     .chat-teacher { font-weight: bold; color: #D9534F; }
@@ -33,12 +29,12 @@ st.markdown(
 
 # --- ФАЙЛЫ БАЗЫ ДАННЫХ ---
 DB_FILE = "school_journal.csv"
-STUDENTS_FILE = "students.txt"
+STUDENTS_FILE = "students_passwords.csv"  # ТЕПЕРЬ CSV: хранит учеников и их пароли
 TEACHERS_FILE = "teachers_passwords.csv"
 ASSIGNMENTS_FILE = "assignments.csv"
-CHAT_FILE = "school_chat.csv"  # Файл памяти мессенджера
+CHAT_FILE = "school_chat.csv"
 
-# 🔒 БЕЗОПАСНОСТЬ: Пароль берется из секретных настроек Streamlit Cloud
+# 🔒 БЕЗОПАСНОСТЬ ЗАВУЧА
 if "password" in st.secrets:
     ZAVUCH_PASSWORD = st.secrets["password"]
 else:
@@ -51,16 +47,10 @@ def load_data():
         return df
     return pd.DataFrame(columns=["Ученик", "Предмет", "Оценка", "Замечание", "Учитель"])
 
-def load_list(filename):
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            return [line.strip() for line in f.readlines() if line.strip()]
-    return []
-
-def save_list(filename, current_list):
-    with open(filename, "w", encoding="utf-8") as f:
-        for item in current_list:
-            f.write(f"{item}\n")
+def load_students():
+    if os.path.exists(STUDENTS_FILE):
+        return pd.read_csv(STUDENTS_FILE)
+    return pd.DataFrame(columns=["Ученик", "Пароль"])
 
 def load_teachers():
     if os.path.exists(TEACHERS_FILE):
@@ -80,8 +70,8 @@ def load_chat():
 # Инициализация сессий
 if "journal" not in st.session_state:
     st.session_state.journal = load_data()
-if "students" not in st.session_state:
-    st.session_state.students = load_list(STUDENTS_FILE)
+if "students_df" not in st.session_state:
+    st.session_state.students_df = load_students()
 if "teachers_df" not in st.session_state:
     st.session_state.teachers_df = load_teachers()
 if "assignments" not in st.session_state:
@@ -89,11 +79,9 @@ if "assignments" not in st.session_state:
 if "chat_df" not in st.session_state:
     st.session_state.chat_df = load_chat()
 
-# --- ВХОД В СИСТЕМУ ---
+# --- ВХОД В СИСТЕМУ С ПАРОЛЯМИ ---
 st.sidebar.title("🔐 Авторизация")
-role_choice = st.sidebar.radio(
-    "Кто вы?", ["Ученик", "Учитель", "Завуч (Управление)"]
-)
+role_choice = st.sidebar.radio("Кто вы?", ["Ученик", "Учитель", "Завуч (Управление)"])
 
 is_zavuch = False
 is_teacher = False
@@ -120,9 +108,8 @@ elif role_choice == "Учитель":
         current_user_name = st.sidebar.selectbox("Выберите свое имя:", ["-- Выберите из списка --"] + list_teachers)
         if current_user_name != "-- Выберите из списка --":
             t_password = st.sidebar.text_input("Введите личный пароль", type="password", key="t_pass")
-            
             correct_pass = st.session_state.teachers_df[st.session_state.teachers_df["Учитель"] == current_user_name]["Пароль"].values
-            if len(correct_pass) > 0 and str(t_password) == str(correct_pass):
+            if len(correct_pass) > 0 and str(t_password) == str(correct_pass[0]):
                 is_teacher = True
                 auth_success = True
                 user_role_label = "Учитель"
@@ -131,19 +118,26 @@ elif role_choice == "Учитель":
                 st.sidebar.error("Неверный личный пароль!")
 
 else:
-    if not st.session_state.students:
+    list_students = st.session_state.students_df["Ученик"].tolist()
+    if not list_students:
         st.sidebar.warning("В базе пока нет учеников.")
     else:
-        current_user_name = st.sidebar.selectbox("Выберите ваше имя:", ["-- Выберите из списка --"] + st.session_state.students)
+        current_user_name = st.sidebar.selectbox("Выберите ваше имя:", ["-- Выберите из списка --"] + list_students)
         if current_user_name != "-- Выберите из списка --":
-            auth_success = True
-            user_role_label = "Ученик"
+            s_password = st.sidebar.text_input("Введите личный пароль ученика", type="password", key="s_pass")
+            correct_s_pass = st.session_state.students_df[st.session_state.students_df["Ученик"] == current_user_name]["Пароль"].values
+            if len(correct_s_pass) > 0 and str(s_password) == str(correct_s_pass[0]):
+                auth_success = True
+                user_role_label = "Ученик"
+                st.sidebar.success("Добро пожаловать!")
+            elif s_password != "":
+                st.sidebar.error("Неверный личный пароль!")
 # --- ЭКРАН ЗАВУЧА (ГЛАВНОЕ УПРАВЛЕНИЕ) ---
 if is_zavuch and auth_success:
     st.title("👔 Главный Кабинет Завуча")
     st.markdown("---")
 
-    t1, t2, t3, t4, t5 = st.tabs(["⚙️ Создание структуры", "📝 Редактирование базы", "✍️ Выставить оценки", "📊 Аналитика", "💬 Чат школы"])
+    t1, t2, t3, t4, t5 = st.tabs(["⚙️ Создание структуры", "📝 Редактирование базы", "✍️ Выставить оценки", "📊 Улучшенная аналитика", "💬 Чат школы"])
 
     with t1:
         col1, col2 = st.columns(2)
@@ -151,24 +145,24 @@ if is_zavuch and auth_success:
             st.subheader("👤 Регистрация людей")
             p_type = st.selectbox("Кого добавить?", ["Ученик", "Учитель"])
             new_name = st.text_input("ФИО человека")
-            
-            if p_type == "Учитель":
-                new_t_pass = st.text_input("Задать личный пароль для учителя", type="password", key="new_t_p")
+            new_pass = st.text_input("Задать личный пароль для входа", type="password", key="reg_p")
             
             if st.button("Внести в списки"):
-                if new_name.strip():
-                    if p_type == "Ученик" and new_name not in st.session_state.students:
-                        st.session_state.students.append(new_name)
-                        save_list(STUDENTS_FILE, st.session_state.students)
+                if new_name.strip() and new_pass.strip():
+                    if p_type == "Ученик" and new_name not in st.session_state.students_df["Ученик"].tolist():
+                        new_student_row = pd.DataFrame({"Ученик": [new_name], "Пароль": [new_pass]})
+                        st.session_state.students_df = pd.concat([st.session_state.students_df, new_student_row], ignore_index=True)
+                        st.session_state.students_df.to_csv(STUDENTS_FILE, index=False)
                         st.success(f"Ученик зачислен!")
                         st.rerun()
                     elif p_type == "Учитель" and new_name not in st.session_state.teachers_df["Учитель"].tolist():
-                        if new_t_pass.strip():
-                            new_teacher_row = pd.DataFrame({"Учитель": [new_name], "Пароль": [new_t_pass]})
-                            st.session_state.teachers_df = pd.concat([st.session_state.teachers_df, new_teacher_row], ignore_index=True)
-                            st.session_state.teachers_df.to_csv(TEACHERS_FILE, index=False)
-                            st.success(f"Учитель нанят!")
-                            st.rerun()
+                        new_teacher_row = pd.DataFrame({"Учитель": [new_name], "Пароль": [new_pass]})
+                        st.session_state.teachers_df = pd.concat([st.session_state.teachers_df, new_teacher_row], ignore_index=True)
+                        st.session_state.teachers_df.to_csv(TEACHERS_FILE, index=False)
+                        st.success(f"Учитель нанят!")
+                        st.rerun()
+                elif not new_pass.strip():
+                    st.error("Пароль не может быть пустым!")
 
         with col2:
             st.subheader("📚 Создание Предметов")
@@ -192,22 +186,26 @@ if is_zavuch and auth_success:
 
     with t2:
         st.subheader("🔄 Редактирование личных данных")
-        edit_type = st.radio("Что хотите изменить?", ["Изменить имя Ученика", "Изменить данные Учителя"])
+        edit_type = st.radio("Что хотите изменить?", ["Изменить данные Ученика", "Изменить данные Учителя"])
         
-        if edit_type == "Изменить имя Ученика":
-            if not st.session_state.students:
+        if edit_type == "Изменить данные Ученика":
+            list_st = st.session_state.students_df["Ученик"].tolist()
+            if not list_st:
                 st.caption("Учеников пока нет.")
             else:
-                student_to_edit = st.selectbox("Выберите ученика для изменения:", st.session_state.students)
-                updated_student_name = st.text_input("Введите НОВОЕ ФИО ученика", value=student_to_edit)
+                student_to_edit = st.selectbox("Выберите ученика для изменения:", list_st)
+                old_s_pass = st.session_state.students_df[st.session_state.students_df["Ученик"] == student_to_edit]["Пароль"].values
                 
-                if st.button("Сохранить ФИО ученика"):
-                    if updated_student_name.strip() and updated_student_name != student_to_edit:
-                        st.session_state.students = [updated_student_name if x == student_to_edit else x for x in st.session_state.students]
-                        save_list(STUDENTS_FILE, st.session_state.students)
+                updated_student_name = st.text_input("Новое ФИО ученика", value=student_to_edit)
+                updated_student_pass = st.text_input("Новый пароль ученика", value=str(old_s_pass[0]))
+                
+                if st.button("Сохранить данные ученика"):
+                    if updated_student_name.strip() and updated_student_pass.strip():
+                        st.session_state.students_df.loc[st.session_state.students_df["Ученик"] == student_to_edit, ["Ученик", "Пароль"]] = [updated_student_name, updated_student_pass]
+                        st.session_state.students_df.to_csv(STUDENTS_FILE, index=False)
                         st.session_state.journal.loc[st.session_state.journal["Ученик"] == student_to_edit, "Ученик"] = updated_student_name
                         st.session_state.journal.to_csv(DB_FILE, index=False)
-                        st.success("Данные ученика обновлены во всей базе!")
+                        st.success("Данные ученика успешно обновлены!")
                         st.rerun()
                         
         elif edit_type == "Изменить данные Учителя":
@@ -219,7 +217,7 @@ if is_zavuch and auth_success:
                 old_pass = st.session_state.teachers_df[st.session_state.teachers_df["Учитель"] == teacher_to_edit]["Пароль"].values
                 
                 updated_teacher_name = st.text_input("Новое ФИО учителя", value=teacher_to_edit)
-                updated_teacher_pass = st.text_input("Новый пароль учителя", value=str(old_pass))
+                updated_teacher_pass = st.text_input("Новый пароль учителя", value=str(old_pass[0]))
                 
                 if st.button("Сохранить данные учителя"):
                     if updated_teacher_name.strip() and updated_teacher_pass.strip():
@@ -231,17 +229,17 @@ if is_zavuch and auth_success:
                         st.session_state.journal.to_csv(DB_FILE, index=False)
                         st.success("Данные учителя успешно переписаны!")
                         st.rerun()
-
     with t3:
         st.subheader("✍️ Выставление оценок от лица Администрации")
         list_all_subjects = st.session_state.assignments["Предмет"].tolist()
+        list_st = st.session_state.students_df["Ученик"].tolist()
         
-        if not st.session_state.students or not list_all_subjects:
+        if not list_st or not list_all_subjects:
             st.info("ℹ️ Добавьте учеников и предметы во вкладке 'Создание структуры'.")
         else:
             z_col1, z_col2, z_col3 = st.columns(3)
             with z_col1:
-                z_student = st.selectbox("Ученик", st.session_state.students, key="z_stu")
+                z_student = st.selectbox("Ученик", list_st, key="z_stu")
             with z_col2:
                 z_subject = st.selectbox("Предмет", list_all_subjects, key="z_sub")
             with z_col3:
@@ -256,7 +254,7 @@ if is_zavuch and auth_success:
                     "Ученик": [z_student],
                     "Предмет": [z_subject],
                     "Оценка": [z_grade],
-                    "Замечание": [f"[Завуч] {z_comm}" if z_comm.strip() else "Выставлено завучем"],
+                    "Замечание": [f"[Завуч] {z_comm}" if z_comm.strip() else "Выставлено администрацией"],
                     "Учитель": [found_teacher]
                 })
                 st.session_state.journal = pd.concat([st.session_state.journal, new_mark], ignore_index=True)
@@ -265,15 +263,29 @@ if is_zavuch and auth_success:
                 st.rerun()
 
     with t4:
-        st.subheader("📊 Аналитика успеваемости")
+        st.subheader("📊 Мониторинг успеваемости школы")
         if st.session_state.journal.empty:
-            st.info("В журнале еще нет оценок.")
+            st.info("В журнале еще нет оценок для аналитики.")
         else:
             df_an = st.session_state.journal.copy()
             df_an["Оценка_Число"] = pd.to_numeric(df_an["Оценка"], errors="coerce")
-            sub_stats = df_an.groupby("Предмет")["Оценка_Число"].mean().reset_index().round(2)
-            st.table(sub_stats)
             
+            # ВИДЖЕТЫ ГЛАВНЫХ ПОКАЗАТЕЛЕЙ
+            m1, m2, m3 = st.columns(3)
+            m1.metric("📉 Средний балл школы", f"{df_an['Оценка_Число'].mean():.2f}")
+            m2.metric("📋 Выставлено оценок", f"{len(df_an)} шт.")
+            
+            twos_count = (df_an["Оценка"] == "2").sum()
+            m3.metric("🚨 Всего двоек", f"{twos_count} шт.")
+            
+            # Сводная таблица по предметам
+            st.markdown("### 📚 Успеваемость по предметам:")
+            sub_stats = df_an.groupby("Предмет")["Оценка_Число"].mean().reset_index().round(2)
+            sub_stats.columns = ["Дисциплина", "Средний балл успеваемости"]
+            st.dataframe(sub_stats, use_container_width=True, hide_index=True)
+            
+            # График распределения
+            st.markdown("### 📊 Общая картина выданных оценок:")
             grade_counts = df_an["Оценка"].value_counts().reset_index()
             grade_counts.columns = ["Оценка", "Количество"]
             st.bar_chart(data=grade_counts, x="Оценка", y="Количество")
@@ -284,6 +296,7 @@ if is_zavuch and auth_success:
                 os.remove(f)
         st.session_state.clear()
         st.rerun()
+
 # --- ЭКРАН УЧИТЕЛЯ ---
 elif is_teacher and auth_success:
     st.title(f"👓 Журнал преподавателя: {current_user_name}")
@@ -292,17 +305,18 @@ elif is_teacher and auth_success:
     t1, t2 = st.tabs(["✍️ Журнал оценок", "💬 Чат школы"])
 
     with t1:
-        my_subjects = st.session_state.assignments[st.session_state.assignments["Учитель"] == current_user_name]["Предмет"].tolist()
+        my_subjects = st.session_state.assignments[st.session_state.assignments["Учитель"] == current_user_name]["Permanent" if "Permanent" in st.session_state.assignments.columns else "Предмет"].tolist()
+        list_st = st.session_state.students_df["Ученик"].tolist()
 
         if not my_subjects:
             st.warning("Завуч еще не закрепил за вами предметов!")
-        elif not st.session_state.students:
+        elif not list_st:
             st.warning("В базе данных пока нет учеников.")
         else:
             st.subheader("✍️ Выставление оценок")
             col1, col2, col3 = st.columns(3)
             with col1:
-                s_student = st.selectbox("Ученик", st.session_state.students)
+                s_student = st.selectbox("Ученик", list_st)
             with col2:
                 s_subject = st.selectbox("Предмет", my_subjects)
             with col3:
@@ -329,13 +343,13 @@ elif is_teacher and auth_success:
             if my_logged_marks.empty:
                 st.caption("Вы еще не выставили ни одной оценки.")
             else:
-                st.dataframe(my_logged_marks[["Ученик", "Предмет", "Оценка", "Замечание"]], use_container_width=True)
+                st.dataframe(my_logged_marks[["Ученик", "Предмет", "Оценка", "Замечание"]], use_container_width=True, hide_index=True)
 # --- ЭКРАН УЧЕНИКА / СТАРТОВЫЙ ЭКРАН ---
 else:
     if not auth_success:
         st.title("🏫 Дневник Поведения")
         st.markdown("### 🪧 Информационная доска")
-        st.info("Пожалуйста, нажмите на стрелочку или кнопку меню (☰) в левом верхнем углу, выберите роль и введите данные для входа.")
+        st.info("Пожалуйста, нажмите на стрелочку или кнопку меню (☰) в левом верхнем углу, выберите роль ученика/учителя и введите ваш персональный пароль для входа.")
     else:
         st.title(f"📱 Дневник ученика: {current_user_name}")
         st.markdown("---")
@@ -343,7 +357,6 @@ else:
         tab_diary, tab_chat = st.tabs(["📊 Мой табель успеваемости", "💬 Чат школы"])
 
         with tab_diary:
-            # Доска почета/позора школы
             if not st.session_state.journal.empty:
                 df_l = st.session_state.journal.copy()
                 st.markdown("### 🏆 Доска лидеров класса")
@@ -394,14 +407,12 @@ else:
                         for _, row in sub_data.iterrows():
                             if pd.notna(row["Замечание"]) and str(row["Замечание"]).strip() and str(row["Замечание"]).lower() != "nan":
                                 st.caption(f"• ({row['Учитель']}) Оценка {row['Оценка']}: «{row['Замечание'].strip()}»")
-                                ran_notes = True
                                 has_n = True
                         if not has_n:
                             st.caption("*Замечания отсутствуют.*")
 
 # --- ОБЩИЙ ДВИЖОК МЕССЕНДЖЕРА ДЛЯ ВСЕХ ВКЛАДОК ЧАТА ---
 if auth_success:
-    # Определяем, в какой именно вкладке сейчас находится пользователь, чтобы вставить чат
     target_tab = None
     if is_zavuch: target_tab = t5
     elif is_teacher: target_tab = t2
@@ -411,7 +422,6 @@ if auth_success:
         with target_tab:
             st.subheader("💬 Школьная курилка (Общий мессенджер)")
             
-            # Поле для отправки нового сообщения
             with st.form("chat_form", clear_on_submit=True):
                 user_msg = st.text_input("Введите сообщение для всей школы:")
                 submit_msg = st.form_submit_button("🚀 Отправить")
@@ -419,7 +429,7 @@ if auth_success:
                 if submit_msg and user_msg.strip():
                     new_post = pd.DataFrame({
                         "Отправитель": [current_user_name],
-                        "Роль": [user_role_label],
+                        "Row" if "Row" in st.session_state.chat_df.columns else "Роль": [user_role_label],
                         "Сообщение": [user_msg.strip()]
                     })
                     st.session_state.chat_df = pd.concat([st.session_state.chat_df, new_post], ignore_index=True)
@@ -427,12 +437,11 @@ if auth_success:
                     st.rerun()
             
             st.markdown("---")
-            # Вывод истории переписки снизу вверх (самые свежие сверху)
             if st.session_state.chat_df.empty:
                 st.caption("_Здесь пока никто не писал. Будь первым!_")
             else:
                 for idx, row in st.session_state.chat_df.iloc[::-1].iterrows():
-                    role = row["Роль"]
+                    role = row["Row" if "Row" in st.session_state.chat_df.columns else "Роль"]
                     sender = row["Отправитель"]
                     msg = row["Сообщение"]
                     
