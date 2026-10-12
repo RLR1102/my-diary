@@ -1,5 +1,6 @@
 import os
 import time
+import shutil
 import pandas as pd
 import streamlit as st
 from datetime import datetime
@@ -17,31 +18,18 @@ st.markdown(
     .styles_viewerBadge__1yB5_, .viewerBadge_link__1S137, .viewerBadge_text__1JaDK { display: none !important; }
     [data-testid="stSidebar"] { min-width: 250px; max-width: 280px; }
     
-    /* Стили адаптированы под цвета темы с помощью переменных Streamlit */
     .report-card-header { margin-top: 15px; margin-bottom: 10px; color: var(--text-color); font-weight: bold; font-size: 1.2rem; }
     .grade-badge { font-size: 18px; letter-spacing: 2px; color: #2C3E50; font-weight: bold; background-color: #F8F9FA; padding: 3px 8px; border-radius: 5px; border: 1px solid #E2E8F0; }
     
-    /* Блоки Сигмы и Хулигана теперь хамелеоны */
     .leaderboard-box { 
-        padding: 10px; 
-        border-radius: 8px; 
-        margin-bottom: 10px; 
-        text-align: center; 
-        font-size: 0.9rem;
-        color: var(--text-color);
-        background-color: var(--secondary-background-color);
+        padding: 10px; border-radius: 8px; margin-bottom: 10px; text-align: center; font-size: 0.9rem;
+        color: var(--text-color); background-color: var(--secondary-background-color);
         border: 1px solid rgba(128, 128, 128, 0.2);
     }
     
-    /* Облачка чата адаптированы под темную тему */
     .chat-bubble { 
-        padding: 10px; 
-        border-radius: 10px; 
-        margin-bottom: 5px; 
-        font-size: 0.95rem; 
-        line-height: 1.3;
-        color: var(--text-color);
-        background-color: var(--secondary-background-color);
+        padding: 10px; border-radius: 10px; margin-bottom: 5px; font-size: 0.95rem; line-height: 1.3;
+        color: var(--text-color); background-color: var(--secondary-background-color);
     }
     .chat-user { font-weight: bold; color: #3498DB; }
     .chat-teacher { font-weight: bold; color: #E74C3C; }
@@ -51,18 +39,21 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- ФАЙЛЫ БАЗЫ ДАННЫХ ---
+# --- ФАЙЛЫ БАЗЫ ДАННЫХ И МЕДИА ---
 DB_FILE = "school_journal.csv"
 STUDENTS_FILE = "students_passwords.csv"
 TEACHERS_FILE = "teachers_passwords.csv"
 ASSIGNMENTS_FILE = "assignments.csv"
 CHAT_FILE = "school_chat.csv"
+MEDIA_DIR = "chat_media"
+
+if not os.path.exists(MEDIA_DIR):
+    os.makedirs(MEDIA_DIR)
 
 if "password" in st.secrets:
     ZAVUCH_PASSWORD = st.secrets["password"]
 else:
     ZAVUCH_PASSWORD = "Armanboss"
-
 def load_data():
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE)
@@ -85,8 +76,12 @@ def load_assignments():
     return pd.DataFrame(columns=["Предмет", "Учитель"])
 
 def load_chat():
-    if os.path.exists(CHAT_FILE): return pd.read_csv(CHAT_FILE)
-    return pd.DataFrame(columns=["Отправитель", "Роль", "Сообщение"])
+    if os.path.exists(CHAT_FILE): 
+        df = pd.read_csv(CHAT_FILE)
+        if "Медиа" not in df.columns: df["Медиа"] = ""
+        return df
+    return pd.DataFrame(columns=["Отправитель", "Роль", "Сообщение", "Медиа"])
+
 # Инициализация сессий
 if "journal" not in st.session_state: st.session_state.journal = load_data()
 if "students_df" not in st.session_state: st.session_state.students_df = load_students()
@@ -94,59 +89,67 @@ if "teachers_df" not in st.session_state: st.session_state.teachers_df = load_te
 if "assignments" not in st.session_state: st.session_state.assignments = load_assignments()
 if "chat_df" not in st.session_state: st.session_state.chat_df = load_chat()
 
-# Инициализация флагов авторизации
-for key, default in [("auth_success", False), ("is_zavuch", False), ("is_teacher", False), ("current_user_name", ""), ("user_role_label", "Ученик")]:
+# Инициализация флагов авторизации и настроек лимита чата
+for key, default in [("auth_success", False), ("is_zavuch", False), ("is_teacher", False), ("current_user_name", ""), ("user_role_label", "Ученик"), ("chat_limit", "Безлимитно")]:
     if key not in st.session_state: st.session_state[key] = default
 
-# Счетчик для уведомлений чата
 if "last_viewed_chat_len" not in st.session_state:
     st.session_state.last_viewed_chat_len = len(st.session_state.chat_df)
-
-# Функция для показа информера уведомлений на экранах
 def show_chat_notification():
     current_len = len(st.session_state.chat_df)
     unread = current_len - st.session_state.last_viewed_chat_len
     if unread > 0:
-        st.info(f"💬 В мессенджере {unread} новых сообщений! Проверьте вкладку чата.")
+        st.info(f"💬 В мессенджере {unread} новых сообщений!")
     elif current_len > 0:
         last_msg = st.session_state.chat_df.iloc[-1]
-        st.caption(f"📢 Последнее в чате от {last_msg['Отправитель']}: «{last_msg['Сообщение'][:30]}...»")
+        st.caption(f"📢 В чате от {last_msg['Отправитель']}: «{last_msg['Сообщение'][:25]}...»")
 
 def render_school_chat():
-    # Как только открыли вкладку чата — сбрасываем уведомления
     st.session_state.last_viewed_chat_len = len(st.session_state.chat_df)
+    st.subheader("💬 Школьный мессенджер с Медиа")
     
-    st.subheader("💬 Школьный мессенджер (Адаптивный)")
     with st.form("chat_form", clear_on_submit=True):
         user_msg = st.text_input("Введите сообщение:")
+        uploaded_file = st.file_uploader("Прикрепить фото или видео 📎", type=["png", "jpg", "jpeg", "mp4", "mov"])
         submit_msg = st.form_submit_button("🚀 Отправить")
         
-        if submit_msg and user_msg.strip():
-            new_post = pd.DataFrame({
-                "Отправитель": [st.session_state.current_user_name],
-                "Роль": [st.session_state.user_role_label],
-                "Сообщение": [user_msg.strip()]
-            })
-            st.session_state.chat_df = pd.concat([st.session_state.chat_df, new_post], ignore_index=True)
+        if submit_msg and (user_msg.strip() or uploaded_file is not None):
+            media_path = ""
+            if uploaded_file is not None:
+                file_ext = os.path.splitext(uploaded_file.name)[1]
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                media_name = f"{timestamp}_{st.session_state.current_user_name}{file_ext}"
+                media_path = os.path.join(MEDIA_DIR, media_name)
+                with open(media_path, "wb") as f: f.write(uploaded_file.getbuffer())
+            
+            new_post = pd.DataFrame({"Отправитель": [st.session_state.current_user_name], "Роль": [st.session_state.user_role_label], "Сообщение": [user_msg.strip()], "Медиа": [media_path]})
+            updated_chat = pd.concat([st.session_state.chat_df, new_post], ignore_index=True)
+            
+            if st.session_state.chat_limit != "Безлимитно":
+                updated_chat = updated_chat.tail(int(st.session_state.chat_limit))
+                
+            st.session_state.chat_df = updated_chat
             st.session_state.chat_df.to_csv(CHAT_FILE, index=False)
             st.session_state.last_viewed_chat_len = len(st.session_state.chat_df)
             st.rerun()
     
     st.markdown("---")
-    if st.session_state.chat_df.empty:
-        st.caption("_Здесь пока никто не писал._")
+    if st.session_state.chat_df.empty: st.caption("_Здесь пока пусто._")
     else:
         for idx, row in st.session_state.chat_df.iloc[::-1].iterrows():
             role = row["Роль"]
             sender = row["Отправитель"]
             msg = row["Сообщение"]
+            media = row["Медиа"] if "Медиа" in row and pd.notna(row["Медиа"]) else ""
             
-            if role == "Завуч":
-                st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #F1C40F;'><span class='chat-zavuch'>👑 [Завуч]</span>: {msg}</div>", unsafe_allow_html=True)
-            elif role == "Учитель":
-                st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #E74C3C;'><span class='chat-teacher'>👓 Уч. {sender}</span>: {msg}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #3498DB;'><span class='chat-user'>👤 {sender}</span>: {msg}</div>", unsafe_allow_html=True)
+            if role == "Завуч": st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #F1C40F;'><span class='chat-zavuch'>👑 [Завуч]</span>: {msg}</div>", unsafe_allow_html=True)
+            elif role == "Учитель": st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #E74C3C;'><span class='chat-teacher'>👓 Уч. {sender}</span>: {msg}</div>", unsafe_allow_html=True)
+            else: st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #3498DB;'><span class='chat-user'>👤 {sender}</span>: {msg}</div>", unsafe_allow_html=True)
+            
+            if media and os.path.exists(media):
+                ext = os.path.splitext(media)[1].lower()
+                if ext in [".png", ".jpg", ".jpeg"]: st.image(media, use_container_width=True)
+                elif ext in [".mp4", ".mov"]: st.video(media)
 st.sidebar.title("🔐 Авторизация")
 role_choice = st.sidebar.radio("Кто вы?", ["Ученик", "Учитель", "Завуч (Управление)"])
 
@@ -185,10 +188,9 @@ else:
                 st.session_state.current_user_name = student_sel
                 st.session_state.user_role_label = "Ученик"
             elif s_password != "": st.sidebar.error("Неверный пароль ученика!")
-
 if st.session_state.is_zavuch and st.session_state.auth_success:
     st.title("👔 Кабинет Завуча")
-    show_chat_notification() # Вывод уведомлений чата
+    show_chat_notification()
     st.markdown("---")
 
     t1, t2, t3, t4, t5 = st.tabs(["⚙️ Структура", "📝 База", "✍️ Оценки", "📊 Аналитика учеников", "💬 Чат"])
@@ -210,7 +212,6 @@ if st.session_state.is_zavuch and st.session_state.auth_success:
                         st.session_state.teachers_df = pd.concat([st.session_state.teachers_df, pd.DataFrame({"Учитель": [new_name], "Пароль": [new_pass]})], ignore_index=True)
                         st.session_state.teachers_df.to_csv(TEACHERS_FILE, index=False)
                         st.toast("Учитель добавлен!"); time.sleep(1); st.rerun()
-
         with col2:
             st.subheader("📚 Предметы")
             new_sub = st.text_input("Название предмета")
@@ -221,6 +222,22 @@ if st.session_state.is_zavuch and st.session_state.auth_success:
                     st.session_state.assignments = pd.concat([st.session_state.assignments, pd.DataFrame({"Предмет": [new_sub], "Учитель": [assigned_teacher]})], ignore_index=True)
                     st.session_state.assignments.to_csv(ASSIGNMENTS_FILE, index=False)
                     st.toast("Предмет создан!"); time.sleep(1); st.rerun()
+        
+        st.markdown("---")
+        st.subheader("🧹 Управление чатом")
+        opt_limits = ["Безлимитно", "20", "50", "100", "200"]
+        current_idx = opt_limits.index(str(st.session_state.chat_limit)) if str(st.session_state.chat_limit) in opt_limits else 0
+        chosen_limit = st.selectbox("Автоочистка (лимит сообщений):", opt_limits, index=current_idx)
+        if chosen_limit != st.session_state.chat_limit:
+            st.session_state.chat_limit = chosen_limit
+            st.toast(f"Лимит: {chosen_limit}")
+            
+        if st.button("🗑️ Стереть всю переписку и медиа"):
+            st.session_state.chat_df = pd.DataFrame(columns=["Отправитель", "Роль", "Сообщение", "Медиа"])
+            st.session_state.chat_df.to_csv(CHAT_FILE, index=False)
+            if os.path.exists(MEDIA_DIR):
+                shutil.rmtree(MEDIA_DIR); os.makedirs(MEDIA_DIR)
+            st.toast("Чат полностью очищен! 🧹"); time.sleep(1); st.rerun()
 
     with t2:
         st.subheader("🔄 Редактирование")
@@ -237,7 +254,6 @@ if st.session_state.is_zavuch and st.session_state.auth_success:
                 st.session_state.journal.loc[st.session_state.journal["Ученик"] == student_to_edit, "Ученик"] = updated_name
                 st.session_state.journal.to_csv(DB_FILE, index=False)
                 st.toast("Обновлено!"); time.sleep(1); st.rerun()
-        # Для краткости редактирование учителя аналогично переписано под безопасные индексы
         elif edit_type == "Учителя" and not st.session_state.teachers_df.empty:
             list_tch = st.session_state.teachers_df["Учитель"].tolist()
             teacher_to_edit = st.selectbox("Выберите учителя:", list_tch)
@@ -250,36 +266,26 @@ if st.session_state.is_zavuch and st.session_state.auth_success:
                 st.toast("Учитель изменен!"); time.sleep(1); st.rerun()
 
     with t3:
-        st.subheader("✍️ Выставление оценок с календарем")
-        list_all_subjects = st.session_state.assignments["Предмет"].tolist()
+        st.subheader("✍️ Выставление оценок Администрацией")
+        list_all_subjects = st.session_state.assignments["Predmet" if "Predmet" in st.session_state.assignments.columns else "Предмет"].tolist()
         list_st = st.session_state.students_df["Ученик"].tolist()
-        
         if list_st and list_all_subjects:
             z_col1, z_col2, z_col3 = st.columns(3)
             with z_col1: z_student = st.selectbox("Ученик", list_st, key="z_stu")
             with z_col2: z_subject = st.selectbox("Предмет", list_all_subjects, key="z_sub")
             with z_col3: z_grade = st.selectbox("Оценка", ["5", "4", "3", "2"], key="z_grd")
-                
-            # --- ИНТЕГРАЦИЯ КАЛЕНДАРЯ ---
-            z_date = st.date_input("Укажите дату выставления оценки:", datetime.now())
+            z_date = st.date_input("Укажите дату:", datetime.now())
             z_comm = st.text_input("Замечание от Завуча", key="z_com")
-            
             if st.button("Выставить оценку"):
                 found_t = st.session_state.assignments[st.session_state.assignments["Предмет"] == z_subject]["Учитель"].values
                 teacher_name = found_t[0] if len(found_t) > 0 else "Завуч"
-                new_mark = pd.DataFrame({
-                    "Ученик": [z_student], "Предмет": [z_subject], "Оценка": [z_grade],
-                    "Замечание": [f"[Завуч] {z_comm}" if z_comm.strip() else "Выставлено администрацией"],
-                    "Учитель": [teacher_name], "Дата": [z_date.strftime("%Y-%m-%d")]
-                })
+                new_mark = pd.DataFrame({"Ученик": [z_student], "Предмет": [z_subject], "Оценка": [z_grade], "Замечание": [f"[Завуч] {z_comm}" if z_comm.strip() else "Выставлено администрацией"], "Учитель": [teacher_name], "Дата": [z_date.strftime("%Y-%m-%d")]})
                 st.session_state.journal = pd.concat([st.session_state.journal, new_mark], ignore_index=True)
                 st.session_state.journal.to_csv(DB_FILE, index=False)
                 st.toast("Успешно добавлено!"); time.sleep(1); st.rerun()
-
     with t4:
-        st.subheader("📊 Расширенная аналитика школы")
-        if st.session_state.journal.empty:
-            st.info("В журнале еще нет оценок.")
+        st.subheader("📊 Аналитика и Детальный поиск оценок")
+        if st.session_state.journal.empty: st.info("В журнале еще нет оценок.")
         else:
             df_an = st.session_state.journal.copy()
             df_an["Оценка_Число"] = pd.to_numeric(df_an["Оценка"], errors="coerce")
@@ -289,73 +295,54 @@ if st.session_state.is_zavuch and st.session_state.auth_success:
             m2.metric("📋 Всего оценок", f"{len(df_an)} шт.")
             m3.metric("🚨 Двоек в базе", f"{(df_an['Оценка'] == '2').sum()} шт.")
             
-            # --- НОВАЯ ДЕТАЛЬНАЯ ТАБЛИЦА ПО УЧЕНИКАМ (КТО, ЧТО И ПО ЧЕМ С ОЦЕНКАМИ И ДАТАМИ) ---
-            st.markdown("### 🔍 Детальный поиск успеваемости:")
-            search_student = st.selectbox("Фильтр по ученику (для детального просмотра):", ["Все ученики"] + st.session_state.students_df["Ученик"].tolist())
-            
+            st.markdown("### 🔍 Поиск оценок конкретного ученика:")
+            search_student = st.selectbox("Выберите ученика:", ["Все ученики"] + st.session_state.students_df["Ученик"].tolist())
             df_filtered = df_an.copy()
-            if search_student != "Все ученики":
-                df_filtered = df_filtered[df_filtered["Ученик"] == search_student]
+            if search_student != "Все ученики": df_filtered = df_filtered[df_filtered["Ученик"] == search_student]
                 
-            st.dataframe(
-                df_filtered[["Дата", "Ученик", "Предмет", "Оценка", "Замечание", "Учитель"]].sort_values(by="Дата", ascending=False),
-                use_container_width=True, hide_index=True
-            )
+            st.dataframe(df_filtered[["Дата", "Ученик", "Предмет", "Оценка", "Замечание", "Учитель"]].sort_values(by="Дата", ascending=False), use_container_width=True, hide_index=True)
             
             st.markdown("### 📚 Средний балл по дисциплинам:")
             sub_stats = df_an.groupby("Предмет")["Оценка_Число"].mean().reset_index().round(2)
-            sub_stats.columns = ["Дисциплина", "Средний балл успеваемости"]
+            sub_stats.columns = ["Дисциплина", "Средний балл"]
             st.dataframe(sub_stats, use_container_width=True, hide_index=True)
 
-    with t5:
-        render_school_chat()
+    with t5: render_school_chat()
 
     if st.sidebar.button("🚨 Полный сброс всей школы"):
         for f in [DB_FILE, STUDENTS_FILE, TEACHERS_FILE, ASSIGNMENTS_FILE, CHAT_FILE]:
             if os.path.exists(f): os.remove(f)
-        st.session_state.clear()
-        st.rerun()
+        if os.path.exists(MEDIA_DIR): shutil.rmtree(MEDIA_DIR)
+        st.session_state.clear(); st.rerun()
 
 # --- ЭКРАН УЧИТЕЛЯ ---
 elif st.session_state.is_teacher and st.session_state.auth_success:
     st.title(f"👓 Журнал преподавателя: {st.session_state.current_user_name}")
     show_chat_notification()
     st.markdown("---")
-
     t1, t2 = st.tabs(["✍️ Журнал оценок", "💬 Чат школы"])
 
     with t1:
-        my_subjects = st.session_state.assignments[st.session_state.assignments["Учитель"] == st.session_state.current_user_name]["Permanent" if "Permanent" in st.session_state.assignments.columns else "Предмет"].tolist()
+        my_subjects = st.session_state.assignments[st.session_state.assignments["Учитель"] == st.session_state.current_user_name]["Предмет"].tolist()
         list_st = st.session_state.students_df["Ученик"].tolist()
-
         if my_subjects and list_st:
             st.subheader("✍️ Выставление оценок")
             col1, col2, col3 = st.columns(3)
             with col1: s_student = st.selectbox("Ученик", list_st)
             with col2: s_subject = st.selectbox("Предмет", my_subjects)
             with col3: s_grade = st.selectbox("Оценка", ["5", "4", "3", "2"])
-
-            s_date = st.date_input("Дата проведения занятия / оценки:", datetime.now())
-            s_comm = st.text_input("Комментарий / Замечание")
-            
+            s_date = st.date_input("Дата занятия:", datetime.now())
+            s_comm = st.text_input("Замечание")
             if st.button("Записать в журнал"):
-                new_mark = pd.DataFrame({
-                    "Ученик": [s_student], "Предмет": [s_subject], "Оценка": [s_grade],
-                    "Замечание": [s_comm.strip() if s_comm.strip() else "Нет замечаний"],
-                    "Учитель": [st.session_state.current_user_name], "Дата": [s_date.strftime("%Y-%m-%d")]
-                })
+                new_mark = pd.DataFrame({"Ученик": [s_student], "Предмет": [s_subject], "Оценка": [s_grade], "Замечание": [s_comm.strip() if s_comm.strip() else "Нет замечаний"], "Учитель": [st.session_state.current_user_name], "Дата": [s_date.strftime("%Y-%m-%d")]})
                 st.session_state.journal = pd.concat([st.session_state.journal, new_mark], ignore_index=True)
                 st.session_state.journal.to_csv(DB_FILE, index=False)
                 st.toast("Оценка выставлена! 📝"); time.sleep(1); st.rerun()
 
             st.markdown("---")
             my_logged_marks = st.session_state.journal[st.session_state.journal["Учитель"] == st.session_state.current_user_name]
-            if not my_logged_marks.empty:
-                st.dataframe(my_logged_marks[["Дата", "Ученик", "Предмет", "Оценка", "Замечание"]], use_container_width=True, hide_index=True)
-
-    with t2:
-        render_school_chat()
-
+            if not my_logged_marks.empty: st.dataframe(my_logged_marks[["Дата", "Ученик", "Предмет", "Оценка", "Замечание"]], use_container_width=True, hide_index=True)
+    with t2: render_school_chat()
 # --- ЭКРАН УЧЕНИКА / СТАРТОВЫЙ ЭКРАН ---
 else:
     if not st.session_state.auth_success:
@@ -365,7 +352,6 @@ else:
         st.title(f"📱 Дневник ученика: {st.session_state.current_user_name}")
         show_chat_notification()
         st.markdown("---")
-
         tab_diary, tab_chat = st.tabs(["📊 Мой табель успеваемости", "💬 Чат школы"])
 
         with tab_diary:
@@ -373,7 +359,6 @@ else:
                 df_l = st.session_state.journal.copy()
                 st.markdown("### 🏆 Доска лидеров класса")
                 l1, l2 = st.columns(2)
-
                 f5 = df_l[df_l["Оценка"] == "5"]
                 if not f5.empty:
                     b_st = f5["Ученик"].value_counts().idxmax()
@@ -387,9 +372,7 @@ else:
                 else: l2.markdown("<div class='leaderboard-box'>🚨 Хулиган<br><i>Все ведут себя тихо</i></div>", unsafe_allow_html=True)
 
             my_data = st.session_state.journal[st.session_state.journal["Ученик"] == st.session_state.current_user_name].copy()
-
-            if my_data.empty:
-                st.success("🎉 У тебя идеальное поведение! Ни одного выговора или двойки.")
+            if my_data.empty: st.success("🎉 У тебя идеальное поведение! Ни одного замечания.")
             else:
                 my_data["Оценка_Число"] = pd.to_numeric(my_data["Оценка"], errors="coerce")
                 st.markdown(f"<h3 class='report-card-header'>📊 Мой табель оценок (Всего: {len(my_data)} шт.)</h3>", unsafe_allow_html=True)
@@ -397,7 +380,6 @@ else:
                 for subj in my_data["Предмет"].unique():
                     sub_data = my_data[my_data["Предмет"] == subj]
                     g_list = ", ".join([f"{row['Оценка']} ({datetime.strptime(row['Дата'], '%Y-%m-%d').strftime('%d.%m')})" for _, row in sub_data.iterrows()])
-                    
                     raw_avg = sub_data["Оценка_Число"].mean()
                     s_avg = raw_avg if pd.notna(raw_avg) else 0.0
                     avg_text = f"{s_avg:.2f}" if s_avg > 0 else "Нет оценок"
@@ -412,8 +394,4 @@ else:
                                 st.caption(f"• [{row['Дата']}] ({row['Учитель']}) Оценка {row['Оценка']}: «{row['Замечание'].strip()}»")
                                 has_n = True
                         if not has_n: st.caption("*Замечания отсутствуют.*")
-
-        with tab_chat:
-            render_school_chat()
-
-
+        with tab_chat: render_school_chat()
