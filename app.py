@@ -7,10 +7,13 @@ st.set_page_config(
     page_title="Электронный Журнал", page_icon="🏫", layout="centered"
 )
 
-# --- АДАПТИВНЫЙ SMARTPHONE-FRIENDLY СТИЛЬ ---
+# --- АДАПТИВНЫЙ SMARTPHONE СТИЛЬ + ЖЕСТКОЕ СКРЫТИЕ ИКОНКИ GITHUB ---
 st.markdown(
     """
     <style>
+    #GithubIcon { visibility: hidden !important; display: none !important; }
+    .styles_viewerBadge__1yB5_, .viewerBadge_link__1S137, .viewerBadge_text__1JaDK { display: none !important; }
+    [data-testid="stToolbar"] { display: none !important; }
     [data-testid="stSidebar"] { min-width: 250px; max-width: 280px; }
     .report-card-header { margin-top: 15px; margin-bottom: 10px; color: #1E3A8A; font-weight: bold; font-size: 1.2rem; }
     .grade-badge { font-size: 18px; letter-spacing: 2px; color: #2C3E50; font-weight: bold; background-color: #F8F9FA; padding: 3px 8px; border-radius: 5px; border: 1px solid #E2E8F0; }
@@ -25,7 +28,12 @@ DB_FILE = "school_journal.csv"
 STUDENTS_FILE = "students.txt"
 TEACHERS_FILE = "teachers_passwords.csv"
 ASSIGNMENTS_FILE = "assignments.csv"
-ZAVUCH_PASSWORD = "Armanboss"
+
+# 🔒 БЕЗОПАСНОСТЬ: Пароль берется из секретных настроек Streamlit Cloud
+if "password" in st.secrets:
+    ZAVUCH_PASSWORD = st.secrets["password"]
+else:
+    ZAVUCH_PASSWORD = "Armanboss"  # Запасной пароль для вашей локальной работы на ПК
 
 def load_data():
     if os.path.exists(DB_FILE):
@@ -38,7 +46,7 @@ def load_list(filename):
     if os.path.exists(filename):
         with open(filename, "r", encoding="utf-8") as f:
             return [line.strip() for line in f.readlines() if line.strip()]
-    return []
+    return
 
 def save_list(filename, current_list):
     with open(filename, "w", encoding="utf-8") as f:
@@ -74,11 +82,13 @@ role_choice = st.sidebar.radio(
 is_zavuch = False
 is_teacher = False
 current_user_name = ""
+auth_success = False
 
 if role_choice == "Завуч (Управление)":
     password = st.sidebar.text_input("Пароль Завуча", type="password")
     if password == ZAVUCH_PASSWORD:
         is_zavuch = True
+        auth_success = True
         st.sidebar.success("Доступ в Главное Управление!")
     elif password != "":
         st.sidebar.error("Неверный пароль!")
@@ -88,27 +98,31 @@ elif role_choice == "Учитель":
     if not list_teachers:
         st.sidebar.warning("Учителя еще не добавлены завучем.")
     else:
-        current_user_name = st.sidebar.selectbox("Выберите свое имя:", list_teachers)
-        t_password = st.sidebar.text_input("Введите личный пароль", type="password", key="t_pass")
-        
-        correct_pass = st.session_state.teachers_df[st.session_state.teachers_df["Учитель"] == current_user_name]["Пароль"].values
-        if len(correct_pass) > 0 and str(t_password) == str(correct_pass[0]):
-            is_teacher = True
-            st.sidebar.success("Журнал открыт!")
-        elif t_password != "":
-            st.sidebar.error("Неверный личный пароль!")
+        current_user_name = st.sidebar.selectbox("Выберите свое имя:", ["-- Выберите из списка --"] + list_teachers)
+        if current_user_name != "-- Выберите из списка --":
+            t_password = st.sidebar.text_input("Введите личный пароль", type="password", key="t_pass")
+            
+            correct_pass = st.session_state.teachers_df[st.session_state.teachers_df["Учитель"] == current_user_name]["Пароль"].values
+            if len(correct_pass) > 0 and str(t_password) == str(correct_pass[0]):
+                is_teacher = True
+                auth_success = True
+                st.sidebar.success("Журнал открыт!")
+            elif t_password != "":
+                st.sidebar.error("Неверный личный пароль!")
 
 else:
     if not st.session_state.students:
         st.sidebar.warning("В базе пока нет учеников.")
     else:
-        current_user_name = st.sidebar.selectbox("Выберите ваше имя:", st.session_state.students)
+        current_user_name = st.sidebar.selectbox("Выберите ваше имя:", ["-- Выберите из списка --"] + st.session_state.students)
+        if current_user_name != "-- Выберите из списка --":
+            auth_success = True
 # --- ЭКРАН ЗАВУЧА (ГЛАВНОЕ УПРАВЛЕНИЕ) ---
-if is_zavuch:
+if is_zavuch and auth_success:
     st.title("👔 Главный Кабинет Завуча")
     st.markdown("---")
 
-    t1, t2, t3 = st.tabs(["⚙️ Управление школой", "✍️ Выставить оценки как Завуч", "📊 Аналитика школы"])
+    t1, t2, t3, t4 = st.tabs(["⚙️ Создание структуры", "📝 Редактирование базы", "✍️ Выставить оценки", "📊 Аналитика"])
 
     with t1:
         col1, col2 = st.columns(2)
@@ -125,17 +139,15 @@ if is_zavuch:
                     if p_type == "Ученик" and new_name not in st.session_state.students:
                         st.session_state.students.append(new_name)
                         save_list(STUDENTS_FILE, st.session_state.students)
-                        st.success(f"Ученик {new_name} зачислен!")
+                        st.success(f"Ученик зачислен!")
                         st.rerun()
                     elif p_type == "Учитель" and new_name not in st.session_state.teachers_df["Учитель"].tolist():
                         if new_t_pass.strip():
                             new_teacher_row = pd.DataFrame({"Учитель": [new_name], "Пароль": [new_t_pass]})
                             st.session_state.teachers_df = pd.concat([st.session_state.teachers_df, new_teacher_row], ignore_index=True)
                             st.session_state.teachers_df.to_csv(TEACHERS_FILE, index=False)
-                            st.success(f"Учитель {new_name} нанят с личным паролем!")
+                            st.success(f"Учитель нанят!")
                             st.rerun()
-                        else:
-                            st.error("Учителю обязательно нужен пароль!")
 
         with col2:
             st.subheader("📚 Создание Предметов")
@@ -154,20 +166,56 @@ if is_zavuch:
                         new_assign = pd.DataFrame({"Предмет": [new_sub], "Учитель": [assigned_teacher]})
                         st.session_state.assignments = pd.concat([st.session_state.assignments, new_assign], ignore_index=True)
                         st.session_state.assignments.to_csv(ASSIGNMENTS_FILE, index=False)
-                        st.success(f"Предмет '{new_sub}' закреплен за {assigned_teacher}!")
+                        st.success(f"Предмет '{new_sub}' закреплен!")
                         st.rerun()
 
-        st.markdown("---")
-        st.subheader("📋 Список зарегистрированных учителей")
-        if not st.session_state.teachers_df.empty:
-            st.dataframe(st.session_state.teachers_df[["Учитель"]], use_container_width=True)
-
     with t2:
-        st.subheader("✍️ Панель Завуча: Выставление оценок")
+        st.subheader("🔄 Редактирование личных данных")
+        edit_type = st.radio("Что хотите изменить?", ["Изменить имя Ученика", "Изменить данные Учителя"])
+        
+        if edit_type == "Изменить имя Ученика":
+            if not st.session_state.students:
+                st.caption("Учеников пока нет.")
+            else:
+                student_to_edit = st.selectbox("Выберите ученика для изменения:", st.session_state.students)
+                updated_student_name = st.text_input("Введите НОВОЕ ФИО ученика", value=student_to_edit)
+                
+                if st.button("Сохранить ФИО ученика"):
+                    if updated_student_name.strip() and updated_student_name != student_to_edit:
+                        st.session_state.students = [updated_student_name if x == student_to_edit else x for x in st.session_state.students]
+                        save_list(STUDENTS_FILE, st.session_state.students)
+                        st.session_state.journal.loc[st.session_state.journal["Ученик"] == student_to_edit, "Ученик"] = updated_student_name
+                        st.session_state.journal.to_csv(DB_FILE, index=False)
+                        st.success("Данные ученика обновлены во всей базе!")
+                        st.rerun()
+                        
+        elif edit_type == "Изменить данные Учителя":
+            list_teachers = st.session_state.teachers_df["Учитель"].tolist()
+            if not list_teachers:
+                st.caption("Учителей пока нет.")
+            else:
+                teacher_to_edit = st.selectbox("Выберите учителя для изменения:", list_teachers)
+                old_pass = st.session_state.teachers_df[st.session_state.teachers_df["Учитель"] == teacher_to_edit]["Пароль"].values
+                
+                updated_teacher_name = st.text_input("Новое ФИО учителя", value=teacher_to_edit)
+                updated_teacher_pass = st.text_input("Новый пароль учителя", value=str(old_pass[0]))
+                
+                if st.button("Сохранить данные учителя"):
+                    if updated_teacher_name.strip() and updated_teacher_pass.strip():
+                        st.session_state.teachers_df.loc[st.session_state.teachers_df["Учитель"] == teacher_to_edit, ["Учитель", "Пароль"]] = [updated_teacher_name, updated_teacher_pass]
+                        st.session_state.teachers_df.to_csv(TEACHERS_FILE, index=False)
+                        st.session_state.assignments.loc[st.session_state.assignments["Учитель"] == teacher_to_edit, "Учитель"] = updated_teacher_name
+                        st.session_state.assignments.to_csv(ASSIGNMENTS_FILE, index=False)
+                        st.session_state.journal.loc[st.session_state.journal["Учитель"] == teacher_to_edit, "Учитель"] = updated_teacher_name
+                        st.session_state.journal.to_csv(DB_FILE, index=False)
+                        st.success("Данные учителя успешно переписаны!")
+                        st.rerun()
+    with t3:
+        st.subheader("✍️ Выставление оценок от лица Администрации")
         list_all_subjects = st.session_state.assignments["Предмет"].tolist()
         
         if not st.session_state.students or not list_all_subjects:
-            st.info("ℹ️ Добавьте учеников и предметы во вкладке 'Управление школой'.")
+            st.info("ℹ️ Добавьте учеников и предметы во вкладке 'Создание структуры'.")
         else:
             z_col1, z_col2, z_col3 = st.columns(3)
             with z_col1:
@@ -179,14 +227,14 @@ if is_zavuch:
                 
             z_comm = st.text_input("Замечание / Комментарий от Завуча", key="z_com")
             
-            if st.button("Выставить оценку от лица Администрации"):
+            if st.button("Выставить оценку от Администрации"):
                 found_teacher_arr = st.session_state.assignments[st.session_state.assignments["Предмет"] == z_subject]["Учитель"].values
                 found_teacher = found_teacher_arr[0] if len(found_teacher_arr) > 0 else "Завуч"
                 new_mark = pd.DataFrame({
                     "Ученик": [z_student],
                     "Предмет": [z_subject],
                     "Оценка": [z_grade],
-                    "Замечание": [f"[Завуч] {z_comm}" if z_comm.strip() else "Выставлено администрацией"],
+                    "Замечание": [f"[Завуч] {z_comm}" if z_comm.strip() else "Выставлено завучем"],
                     "Учитель": [found_teacher]
                 })
                 st.session_state.journal = pd.concat([st.session_state.journal, new_mark], ignore_index=True)
@@ -194,19 +242,16 @@ if is_zavuch:
                 st.success("Оценка успешно внесена!")
                 st.rerun()
 
-    with t3:
-        st.subheader("📈 Успеваемость учебных дисциплин")
+    with t4:
+        st.subheader("📊 Аналитика успеваемости")
         if st.session_state.journal.empty:
-            st.info("В журнале еще нет оценок для аналитики.")
+            st.info("В журнале еще нет оценок.")
         else:
             df_an = st.session_state.journal.copy()
             df_an["Оценка_Число"] = pd.to_numeric(df_an["Оценка"], errors="coerce")
-
             sub_stats = df_an.groupby("Предмет")["Оценка_Число"].mean().reset_index().round(2)
-            sub_stats.columns = ["Название предмета", "Средний балл школы"]
             st.table(sub_stats)
-
-            st.markdown("**Количество выданных оценок каждого типа:**")
+            
             grade_counts = df_an["Оценка"].value_counts().reset_index()
             grade_counts.columns = ["Оценка", "Количество"]
             st.bar_chart(data=grade_counts, x="Оценка", y="Количество")
@@ -219,30 +264,30 @@ if is_zavuch:
         st.rerun()
 
 # --- ЭКРАН УЧИТЕЛЯ ---
-elif is_teacher:
+elif is_teacher and auth_success:
     st.title(f"👓 Журнал преподавателя: {current_user_name}")
     st.markdown("---")
 
     my_subjects = st.session_state.assignments[st.session_state.assignments["Учитель"] == current_user_name]["Предмет"].tolist()
 
     if not my_subjects:
-        st.warning("Завуч еще не закрепил за вами ни одного предмета!")
+        st.warning("Завуч еще не закрепил за вами предметов!")
     elif not st.session_state.students:
-        st.warning("В школе пока нет учеников для выставления оценок.")
+        st.warning("В базе данных пока нет учеников.")
     else:
-        st.subheader("✍️ Выставление текущих оценок")
+        st.subheader("✍️ Выставление оценок")
         col1, col2, col3 = st.columns(3)
-
         with col1:
             s_student = st.selectbox("Ученик", st.session_state.students)
         with col2:
-            s_subject = st.selectbox("Ваш предмет", my_subjects)
+            s_subject = st.selectbox("Предмет", my_subjects)
         with col3:
             s_grade = st.selectbox("Оценка", ["5", "4", "3", "2"])
 
-        s_comm = st.text_input("Комментарий к оценке / Замечание")
+        s_comm = st.text_input("Комментарий / Замечание")
 
-        if st.button("Записать в электронный журнал"):
+        if st.button("Записать в журнал"):
+            # ИСПРАВЛЕННЫЕ И ВЫЧИЩЕННЫЕ ОТСТУПЫ ЗДЕСЬ!
             new_mark = pd.DataFrame({
                 "Ученик": [s_student],
                 "Предмет": [s_subject],
@@ -252,27 +297,18 @@ elif is_teacher:
             })
             st.session_state.journal = pd.concat([st.session_state.journal, new_mark], ignore_index=True)
             st.session_state.journal.to_csv(DB_FILE, index=False)
-            st.success("Оценка успешно внесена!")
+            st.success("Оценка выставлена!")
             st.rerun()
-
-        st.markdown("---")
-        st.subheader("📋 История выставленных вами оценок")
-        my_logged_marks = st.session_state.journal[st.session_state.journal["Учитель"] == current_user_name]
-        if my_logged_marks.empty:
-            st.caption("Вы еще не выставили ни одной оценки.")
-        else:
-            st.dataframe(my_logged_marks[["Ученик", "Предмет", "Оценка", "Замечание"]], use_container_width=True)
-# --- ЭКРАН УЧЕНИКА (ИСПРАВЛЕНА ШАПКА!) ---
+# --- ЭКРАН УЧЕНИКА / СТАРТОВЫЙ ЭКРАН ---
 else:
-    if not current_user_name:
-        st.title("🏫 Мой Дневник")
-        st.info("Добро пожаловать! База данных пуста. Войдите как Завуч слева и настройте структуру классов.")
+    if not auth_success:
+        st.title("🏫 Дневник Поведения")
+        st.markdown("### 🪧 Информационная доска")
+        st.info("Пожалуйста, выберите свою роль и введите данные в левой панели авторизации для входа в личный кабинет.")
     else:
-        # ЗАГОЛОВОК ТЕПЕРЬ ПОЯВЛЯЕТСЯ СТРОГО ТУТ И ТОЛЬКО ДЛЯ ВЫБРАННОГО УЧЕНИКА
         st.title(f"📱 Дневник ученика: {current_user_name}")
         st.markdown("---")
 
-        # Доска почета/позора школы
         if not st.session_state.journal.empty:
             df_l = st.session_state.journal.copy()
             st.markdown("### 🏆 Доска лидеров класса")
@@ -292,7 +328,6 @@ else:
             else:
                 l2.markdown("<div class='leaderboard-box' style='background-color: #F2F4F4;'>🚨 Хулиган<br><i>Все ведут себя тихо</i></div>", unsafe_allow_html=True)
 
-        # Личные оценки ученика
         my_data = st.session_state.journal[st.session_state.journal["Ученик"] == current_user_name].copy()
 
         if my_data.empty:
@@ -319,7 +354,7 @@ else:
                 with st.expander(f"📖 {subj} (Средний балл: {s_avg:.2f})"):
                     st.markdown(f"Текущие оценки: <span class='grade-badge'>{g_list}</span>", unsafe_allow_html=True)
                     st.markdown("---")
-                    st.markdown("📝 Комментарии и замечания к оценкам:")
+                    st.markdown("📝 Комментарии и замечания:")
                     has_n = False
                     for _, row in sub_data.iterrows():
                         if pd.notna(row["Замечание"]) and str(row["Замечание"]).strip() and str(row["Замечание"]).lower() != "nan":
