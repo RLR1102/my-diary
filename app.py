@@ -75,6 +75,22 @@ if "password" in st.secrets:
     ZAVUCH_PASSWORD = str(st.secrets["password"]).strip()
 else:
     ZAVUCH_PASSWORD = "Armanboss"
+# --- ФАЙЛЫ НАСТРОЕК ЛИМИТОВ ---
+J_LIMIT_FILE = "journal_limit.txt"
+C_LIMIT_FILE = "chat_limit.txt"
+
+def load_limit_setting(filename):
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            val = f.read().strip()
+            if val in ["Безлимитно", "20", "50", "100", "200"]:
+                return val
+    return "Безлимитно"
+
+def save_limit_setting(filename, value):
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(str(value))
+
 def load_data():
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE)
@@ -129,9 +145,14 @@ if "assignments" not in st.session_state: st.session_state.assignments = load_as
 if "chat_df" not in st.session_state: st.session_state.chat_df = load_chat()
 if "homework_df" not in st.session_state: st.session_state.homework_df = load_homework()
 
-# Инициализация базовых флагов
-for key, default in [("auth_success", False), ("is_zavuch", False), ("is_teacher", False), ("current_user_name", ""), ("user_role_label", "Ученик"), ("chat_limit", "Безлимитно"), ("journal_limit", "Безлимитно")]:
+# Инициализация базовых флагов считыванием сохраненных лимитов из файлов
+for key, default in [("auth_success", False), ("is_zavuch", False), ("is_teacher", False), ("current_user_name", ""), ("user_role_label", "Ученик")]:
     if key not in st.session_state: st.session_state[key] = default
+
+if "journal_limit" not in st.session_state:
+    st.session_state.journal_limit = load_limit_setting(J_LIMIT_FILE)
+if "chat_limit" not in st.session_state:
+    st.session_state.chat_limit = load_limit_setting(C_LIMIT_FILE)
 if "last_viewed_chat_len" not in st.session_state:
     st.session_state.last_viewed_chat_len = len(st.session_state.chat_df)
 
@@ -152,7 +173,7 @@ def render_school_chat():
         if submit_msg and (user_msg.strip() or uploaded_file is not None):
             media_path = ""
             if uploaded_file is not None:
-                file_ext = os.path.splitext(uploaded_file.name)[1]
+                file_ext = os.path.splitext(uploaded_file.name)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 media_name = f"{timestamp}_{st.session_state.current_user_name}{file_ext}"
                 media_path = os.path.join(MEDIA_DIR, media_name)
@@ -160,7 +181,6 @@ def render_school_chat():
             
             new_post = pd.DataFrame({"Отправитель": [st.session_state.current_user_name], "Роль": [st.session_state.user_role_label], "Сообщение": [user_msg.strip()], "Медиа": [media_path]})
             
-            # ИСПРАВЛЕНО: Жёсткое применение лимитов автоочистки переписки
             st.session_state.chat_df = pd.concat([st.session_state.chat_df, new_post], ignore_index=True)
             if st.session_state.chat_limit != "Безлимитно":
                 st.session_state.chat_df = st.session_state.chat_df.tail(int(st.session_state.chat_limit))
@@ -168,6 +188,34 @@ def render_school_chat():
             st.session_state.chat_df.to_csv(CHAT_FILE, index=False)
             st.rerun()
     
+    st.markdown("---")
+    if st.session_state.chat_df.empty: st.caption("_Здесь пока пусто._")
+    else:
+        for idx, row in st.session_state.chat_df.iloc[::-1].iterrows():
+            role = row["Роль"]
+            sender = row["Отправитель"]
+            msg = row["Сообщение"]
+            media = row["Медиа"] if "Медиа" in row and pd.notna(row["Медиа"]) else ""
+            
+            if role == "Завуч": st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #F1C40F;'><span class='chat-zavuch'>👑 [Завуч]</span>: {msg}</div>", unsafe_allow_html=True)
+            elif role == "Учитель": st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #E74C3C;'><span class='chat-teacher'>👓 Уч. {sender}</span>: {msg}</div>", unsafe_allow_html=True)
+            else: st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #3498DB;'><span class='chat-user'>👤 {sender}</span>: {msg}</div>", unsafe_allow_html=True)
+            
+            if media and os.path.exists(media):
+                ext = os.path.splitext(media).lower()
+                if ext in [".png", ".jpg", ".jpeg"]: st.image(media, use_container_width=True)
+                elif ext in [".mp4", ".mov"]: st.video(media)
+                
+            if st.session_state.is_zavuch:
+                if st.button("🗑️ Удалить сообщение", key=f"del_msg_{idx}"):
+                    if media and os.path.exists(media):
+                        try: os.remove(media)
+                        except Exception: pass
+                    st.session_state.chat_df = st.session_state.chat_df.drop(idx)
+                    st.session_state.chat_df.to_csv(CHAT_FILE, index=False)
+                    st.toast("Сообщение удалено завучем!")
+                    time.sleep(0.5)
+                    st.rerun()
     st.markdown("---")
     if st.session_state.chat_df.empty: st.caption("_Здесь пока пусто._")
     else:
