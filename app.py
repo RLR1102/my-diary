@@ -143,7 +143,7 @@ def render_school_chat():
                 updated_chat = updated_chat.tail(int(st.session_state.chat_limit))
             st.session_state.chat_df = updated_chat
             st.session_state.chat_df.to_csv(CHAT_FILE, index=False)
-            st.st.rerun()
+            st.rerun()  # ИСПРАВЛЕНО: убран лишний st.
     
     st.markdown("---")
     if st.session_state.chat_df.empty: st.caption("_Здесь пока пусто._")
@@ -152,7 +152,8 @@ def render_school_chat():
             role = row["Роль"]
             sender = row["Отправитель"]
             msg = row["Сообщение"]
-            media = row["Медиа"] if "Медиа" in row and pd.notna(row["Медиa"]) else ""
+            # ИСПРАВЛЕНО: буква "а" переведена на латиницу в row["Медиа"]
+            media = row["Медиа"] if "Медиа" in row and pd.notna(row["Медиа"]) else ""
             if role == "Завуч": st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #F1C40F;'><span class='chat-zavuch'>👑 [Завуч]</span>: {msg}</div>", unsafe_allow_html=True)
             elif role == "Учитель": st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #E74C3C;'><span class='chat-teacher'>👓 Уч. {sender}</span>: {msg}</div>", unsafe_allow_html=True)
             else: st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #3498DB;'><span class='chat-user'>👤 {sender}</span>: {msg}</div>", unsafe_allow_html=True)
@@ -196,6 +197,7 @@ else:
                 st.session_state.auth_success, st.session_state.is_zavuch, st.session_state.is_teacher = True, False, False
                 st.session_state.current_user_name, st.session_state.user_role_label = student_sel, "Ученик"
             elif s_password != "": st.sidebar.error("Неверный пароль ученика!")
+
 if st.session_state.is_zavuch and st.session_state.auth_success:
     st.title("👔 Кабинет Завуча")
     show_chat_notification()
