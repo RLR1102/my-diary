@@ -113,7 +113,7 @@ if "assignments" not in st.session_state: st.session_state.assignments = load_as
 if "chat_df" not in st.session_state: st.session_state.chat_df = load_chat()
 if "homework_df" not in st.session_state: st.session_state.homework_df = load_homework()
 
-# Инициализация базовых флагов
+#保持 Инициализация базовых флагов
 for key, default in [("auth_success", False), ("is_zavuch", False), ("is_teacher", False), ("current_user_name", ""), ("user_role_label", "Ученик"), ("chat_limit", "Безлимитно"), ("journal_limit", "Безлимитно")]:
     if key not in st.session_state: st.session_state[key] = default
 
@@ -184,11 +184,18 @@ st.sidebar.title("🔐 Авторизация")
 if st.session_state.auth_success:
     st.sidebar.success(f"Вы вошли как: {st.session_state.current_user_name} ({st.session_state.user_role_label})")
     if st.sidebar.button("🚪 Выйти из аккаунта"):
-        # ИСПРАВЛЕНО: Добавлены уникальные ключи удалению куки, чтобы избежать дублирования
-        cookie_manager.delete("saved_user", key="delete_cookie_user")
-        cookie_manager.delete("saved_role", key="delete_cookie_role")
+        # ИСПРАВЛЕНО: Безопасное удаление куки через try-except для защиты от KeyError
+        try:
+            cookie_manager.delete("saved_user", key="delete_cookie_user")
+        except Exception:
+            pass
+            
+        try:
+            cookie_manager.delete("saved_role", key="delete_cookie_role")
+        except Exception:
+            pass
+            
         st.session_state.clear()
-        # Даем системе 0.3 секунды очистить куки перед обновлением экрана
         time.sleep(0.3)
         st.rerun()
 else:
@@ -238,6 +245,7 @@ else:
                     time.sleep(0.3)
                     st.rerun()
                 elif s_password != "": st.sidebar.error("Неверный пароль ученика!")
+
 
 if st.session_state.is_zavuch and st.session_state.auth_success:
     st.title("👔 Кабинет Завуча")
