@@ -17,7 +17,7 @@ def get_cookie_manager():
 
 cookie_manager = get_cookie_manager()
 
-# --- АДАПТИВНЫЙ SMARTPHONE СТИЛЬ ДЛЯ СВЕТЛОЙ И ТЕМНОЙ ТЕМЫ ---
+# --- УЛЬТРА-АДАПТИВНЫЙ SMARTPHONE СТИЛЬ ДЛЯ СВЕТЛОЙ И ТЕМНОЙ ТЕМЫ ---
 st.markdown(
     """
     <style>
@@ -75,7 +75,6 @@ if "password" in st.secrets:
     ZAVUCH_PASSWORD = str(st.secrets["password"]).strip()
 else:
     ZAVUCH_PASSWORD = "Armanboss"
-
 def load_data():
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE)
@@ -87,7 +86,6 @@ def load_data():
         return df
     return pd.DataFrame(columns=["Ученик", "Предмет", "Оценка", "Замечание", "Учитель", "Дата"])
 
-# ИСПРАВЛЕНО: Жесткое приведение паролей и имен к текстовому типу во избежание сбоев проверки
 def load_students():
     if os.path.exists(STUDENTS_FILE): 
         df = pd.read_csv(STUDENTS_FILE)
@@ -123,29 +121,19 @@ def load_homework():
     if os.path.exists(HOMEWORK_FILE): return pd.read_csv(HOMEWORK_FILE)
     return pd.DataFrame(columns=["ID", "Предмет", "Учитель", "Задание", "Дедлайн", "Ученик", "Статус", "Ответ"])
 
+# Инициализация сессий
 if "journal" not in st.session_state: st.session_state.journal = load_data()
 if "students_df" not in st.session_state: st.session_state.students_df = load_students()
 if "teachers_df" not in st.session_state: st.session_state.teachers_df = load_teachers()
 if "assignments" not in st.session_state: st.session_state.assignments = load_assignments()
 if "chat_df" not in st.session_state: st.session_state.chat_df = load_chat()
 if "homework_df" not in st.session_state: st.session_state.homework_df = load_homework()
+
 # Инициализация базовых флагов
 for key, default in [("auth_success", False), ("is_zavuch", False), ("is_teacher", False), ("current_user_name", ""), ("user_role_label", "Ученик"), ("chat_limit", "Безлимитно"), ("journal_limit", "Безлимитно")]:
     if key not in st.session_state: st.session_state[key] = default
-
 if "last_viewed_chat_len" not in st.session_state:
     st.session_state.last_viewed_chat_len = len(st.session_state.chat_df)
-
-# Считываем куки «вечного входа» с устройства пользователя
-saved_user = cookie_manager.get("saved_user")
-saved_role = cookie_manager.get("saved_role")
-
-if saved_user and saved_role and not st.session_state.auth_success:
-    st.session_state.auth_success = True
-    st.session_state.current_user_name = str(saved_user).strip()
-    st.session_state.user_role_label = str(saved_role).strip()
-    if saved_role == "Завуч": st.session_state.is_zavuch = True
-    elif saved_role == "Учитель": st.session_state.is_teacher = True
 
 def show_chat_notification():
     current_len = len(st.session_state.chat_df)
@@ -164,35 +152,62 @@ def render_school_chat():
         if submit_msg and (user_msg.strip() or uploaded_file is not None):
             media_path = ""
             if uploaded_file is not None:
-                file_ext = os.path.splitext(uploaded_file.name)
+                file_ext = os.path.splitext(uploaded_file.name)[1]
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 media_name = f"{timestamp}_{st.session_state.current_user_name}{file_ext}"
                 media_path = os.path.join(MEDIA_DIR, media_name)
                 with open(media_path, "wb") as f: f.write(uploaded_file.getbuffer())
             
             new_post = pd.DataFrame({"Отправитель": [st.session_state.current_user_name], "Роль": [st.session_state.user_role_label], "Сообщение": [user_msg.strip()], "Медиа": [media_path]})
-            updated_chat = pd.concat([st.session_state.chat_df, new_post], ignore_index=True)
+            
+            # ИСПРАВЛЕНО: Жёсткое применение лимитов автоочистки переписки
+            st.session_state.chat_df = pd.concat([st.session_state.chat_df, new_post], ignore_index=True)
             if st.session_state.chat_limit != "Безлимитно":
-                updated_chat = updated_chat.tail(int(st.session_state.chat_limit))
-            st.session_state.chat_df = updated_chat
+                st.session_state.chat_df = st.session_state.chat_df.tail(int(st.session_state.chat_limit))
+                
             st.session_state.chat_df.to_csv(CHAT_FILE, index=False)
             st.rerun()
     
     st.markdown("---")
     if st.session_state.chat_df.empty: st.caption("_Здесь пока пусто._")
     else:
+        # Отображение сообщений с кнопкой удаления для Завуча
         for idx, row in st.session_state.chat_df.iloc[::-1].iterrows():
             role = row["Роль"]
             sender = row["Отправитель"]
             msg = row["Сообщение"]
             media = row["Медиа"] if "Медиа" in row and pd.notna(row["Медиа"]) else ""
+            
             if role == "Завуч": st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #F1C40F;'><span class='chat-zavuch'>👑 [Завуч]</span>: {msg}</div>", unsafe_allow_html=True)
             elif role == "Учитель": st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #E74C3C;'><span class='chat-teacher'>👓 Уч. {sender}</span>: {msg}</div>", unsafe_allow_html=True)
             else: st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #3498DB;'><span class='chat-user'>👤 {sender}</span>: {msg}</div>", unsafe_allow_html=True)
+            
             if media and os.path.exists(media):
-                ext = os.path.splitext(media).lower()
+                ext = os.path.splitext(media)[1].lower()
                 if ext in [".png", ".jpg", ".jpeg"]: st.image(media, use_container_width=True)
                 elif ext in [".mp4", ".mov"]: st.video(media)
+                
+            # Модерация для завуча
+            if st.session_state.is_zavuch:
+                if st.button("🗑️ Удалить сообщение", key=f"del_msg_{idx}"):
+                    if media and os.path.exists(media):
+                        try: os.remove(media)
+                        except Exception: pass
+                    st.session_state.chat_df = st.session_state.chat_df.drop(idx)
+                    st.session_state.chat_df.to_csv(CHAT_FILE, index=False)
+                    st.toast("Сообщение удалено завучем!")
+                    time.sleep(0.5)
+                    st.rerun()
+# Считываем куки «вечного входа» с устройства пользователя
+saved_user = cookie_manager.get("saved_user")
+saved_role = cookie_manager.get("saved_role")
+
+if saved_user and saved_role and not st.session_state.auth_success:
+    st.session_state.auth_success = True
+    st.session_state.current_user_name = str(saved_user).strip()
+    st.session_state.user_role_label = str(saved_role).strip()
+    if saved_role == "Завуч": st.session_state.is_zavuch = True
+    elif saved_role == "Учитель": st.session_state.is_teacher = True
 
 # --- ИНТЕРФЕЙС БОКОВОЙ ПАНЕЛИ АВТОРИЗАЦИИ ---
 st.sidebar.title("🔐 Авторизация")
@@ -200,24 +215,17 @@ st.sidebar.title("🔐 Авторизация")
 if st.session_state.auth_success:
     st.sidebar.success(f"Вы вошли как: {st.session_state.current_user_name} ({st.session_state.user_role_label})")
     if st.sidebar.button("🚪 Выйти из аккаунта"):
-        # ИСПРАВЛЕНО: Ключи удаления теперь жестко привязаны к ключам создания куки (z_user, z_role, t_user и т.д.)
         for suffix in ["z_user", "z_role", "t_user", "t_role", "s_user", "s_role"]:
-            try:
-                cookie_manager.delete("saved_user", key=f"delete_cookie_u_{suffix}")
-            except Exception:
-                pass
-            try:
-                cookie_manager.delete("saved_role", key=f"delete_cookie_r_{suffix}")
-            except Exception:
-                pass
+            try: cookie_manager.delete("saved_user", key=f"delete_cookie_u_{suffix}")
+            except Exception: pass
+            try: cookie_manager.delete("saved_role", key=f"delete_cookie_r_{suffix}")
+            except Exception: pass
         
-        # Жестко зачищаем сессию на самом сервере
         st.session_state.auth_success = False
         st.session_state.is_zavuch = False
         st.session_state.is_teacher = False
         st.session_state.current_user_name = ""
         st.session_state.user_role_label = "Ученик"
-        
         st.session_state.clear()
         time.sleep(0.4)
         st.rerun()
@@ -272,7 +280,6 @@ else:
                         time.sleep(0.3)
                         st.rerun()
                     elif s_password != "": st.sidebar.error("Неверный пароль ученика!")
-
 if st.session_state.is_zavuch and st.session_state.auth_success:
     st.title("👔 Кабинет Завуча")
     show_chat_notification()
@@ -355,7 +362,7 @@ if st.session_state.is_zavuch and st.session_state.auth_success:
                 st.toast("Учитель изменен!"); time.sleep(1); st.rerun()
 
     with t3:
-        st.subheader("✍️ Выставление оценок Администрацией")
+        st.subheader("✍️ Выставление и Модерация оценок")
         list_all_subjects = st.session_state.assignments["Предмет"].tolist() if "Предмет" in st.session_state.assignments.columns else st.session_state.assignments["Predmet"].tolist()
         list_st = st.session_state.students_df["Ученик"].tolist()
         if list_st and list_all_subjects:
@@ -370,45 +377,57 @@ if st.session_state.is_zavuch and st.session_state.auth_success:
                 teacher_name = found_t[0] if len(found_t) > 0 else "Завуч"
                 new_mark = pd.DataFrame({"Ученик": [z_student], "Предмет": [z_subject], "Оценка": [z_grade], "Замечание": [f"[Завуч] {z_comm}" if z_comm.strip() else "Выставлено администрацией"], "Учитель": [teacher_name], "Дата": [z_date.strftime("%Y-%m-%d")]})
                 
-                updated_journal = pd.concat([st.session_state.journal, new_mark], ignore_index=True)
+                # ИСПРАВЛЕНО: Жёсткое применение лимитов автоочистки журнала оценок
+                st.session_state.journal = pd.concat([st.session_state.journal, new_mark], ignore_index=True)
                 if st.session_state.journal_limit != "Безлимитно":
-                    updated_journal = updated_journal.tail(int(st.session_state.journal_limit))
-                st.session_state.journal = updated_journal
+                    st.session_state.journal = st.session_state.journal.tail(int(st.session_state.journal_limit))
+                
                 st.session_state.journal.to_csv(DB_FILE, index=False)
                 st.toast("Успешно добавлено!"); time.sleep(1); st.rerun()
-                
     with t4:
-        st.subheader("📊 Аналитика и Детальный поиск оценок")
+        st.subheader("📊 Аналитика и Управление Оценками")
         if st.session_state.journal.empty: st.info("В журнале еще нет оценок.")
         else:
             df_an = st.session_state.journal.copy()
             df_an["Оценка_Число"] = pd.to_numeric(df_an["Оценка"], errors="coerce")
+            
             m1, m2, m3 = st.columns(3)
             m1.metric("📉 Средний балл", f"{df_an['Оценка_Число'].mean():.2f}")
             m2.metric("📋 Всего оценок", f"{len(df_an)} шт.")
             m3.metric("🚨 Двоек в базе", f"{(df_an['Оценка'] == '2').sum()} шт.")
             
+            st.markdown("### 🔍 Поиск и Модерация оценок:")
             search_student = st.selectbox("Выберите ученика для фильтрации:", ["Все ученики"] + st.session_state.students_df["Ученик"].tolist())
             df_filtered = df_an.copy()
             if search_student != "Все ученики": df_filtered = df_filtered[df_filtered["Ученик"] == search_student]
             
-            for _, row in df_filtered.sort_values(by="Дата", ascending=False).iterrows():
-                st.markdown(f"<div class='mobile-data-card'>📅 <b>{row['Дата']}</b> | 👤 {row['Ученик']}<br>📖 <b>{row['Предмет']}</b>: <span class='grade-badge'>{row['Оценка']}</span><br>✍️ <i>Замечание: {row['Замечание']}</i><br>🎓 <i>Преподаватель: {row['Учитель']}</i></div>", unsafe_allow_html=True)
+            # МОБИЛЬНЫЕ КАРТОЧКИ С КНОПКОЙ УДАЛЕНИЯ ДЛЯ ЗАВУЧА
+            for idx, row in df_filtered.sort_values(by="Дата", ascending=False).iterrows():
+                with st.container():
+                    st.markdown(f"<div class='mobile-data-card'>📅 <b>{row['Дата']}</b> | 👤 {row['Ученик']}<br>📖 <b>{row['Предмет']}</b>: <span class='grade-badge'>{row['Оценка']}</span><br>✍️ <i>Замечание: {row['Замечание']}</i><br>🎓 <i>Преподаватель: {row['Учитель']}</i></div>", unsafe_allow_html=True)
+                    if st.button("🗑️ Удалить эту оценку", key=f"del_mark_{idx}"):
+                        st.session_state.journal = st.session_state.journal.drop(idx)
+                        st.session_state.journal.to_csv(DB_FILE, index=False)
+                        st.toast("Оценка стёрта завучем!")
+                        time.sleep(0.5)
+                        st.rerun()
             
-            sub_stats = df_an.groupby("Предмет")["Оценка_Число"].mean().reset_index().round(2)
-            for _, row in sub_stats.iterrows():
-                st.markdown(f"<div class='mobile-data-card'>📖 <b>{row['Предмет']}</b> <br>📊 Средний показатель успеваемости класса: <b>{row['Оценка_Число']}</b></div>", unsafe_allow_html=True)
+            st.markdown("---")
+            st.markdown("### 📊 Детальный средний балл каждого ученика по предметам:")
+            for s_name in st.session_state.students_df["Ученик"].tolist():
+                st.markdown(f"**👤 Успеваемость: {s_name}**")
+                s_marks = df_an[df_an["Ученик"] == s_name]
+ # ИСПРАВЛЕННЫЕ ОТСТУПЫ ДЛЯ ВАШЕГО КУСКА КОДА:
+                if s_marks.empty: 
+                    st.caption("*Оценок нет*")
+                else:
+                    sub_avg_st = s_marks.groupby("Предмет")["Оценка_Число"].mean().reset_index()
+                    for _, s_row in sub_avg_st.iterrows():
+                        st.markdown(f"• {s_row['Предмет']}: **{s_row['Оценка_Число']:.2f}**")
 
-    with t5: render_school_chat()
-
-    if st.sidebar.button("🚨 Полный сброс всей школы"):
-        for f in [DB_FILE, STUDENTS_FILE, TEACHERS_FILE, ASSIGNMENTS_FILE, CHAT_FILE, HOMEWORK_FILE]:
-            if os.path.exists(f): os.remove(f)
-        if os.path.exists(MEDIA_DIR): shutil.rmtree(MEDIA_DIR)
-        cookie_manager.delete("saved_user")
-        cookie_manager.delete("saved_role")
-        st.session_state.clear(); st.rerun()
-# --- ЭКРАН УЧИТЕЛЯ ---
+    with t5: 
+        render_school_chat()
+        # --- ЭКРАН УЧИТЕЛЯ ---
 elif st.session_state.is_teacher and st.session_state.auth_success:
     st.title(f"👓 Журнал преподавателя: {st.session_state.current_user_name}")
     show_chat_notification()
@@ -429,12 +448,25 @@ elif st.session_state.is_teacher and st.session_state.auth_success:
             if st.button("Записать в журнал"):
                 new_mark = pd.DataFrame({"Ученик": [s_student], "Предмет": [s_subject], "Оценка": [s_grade], "Замечание": [s_comm.strip() if s_comm.strip() else "Нет замечаний"], "Учитель": [st.session_state.current_user_name], "Дата": [s_date.strftime("%Y-%m-%d")]})
                 
-                updated_journal = pd.concat([st.session_state.journal, new_mark], ignore_index=True)
+                st.session_state.journal = pd.concat([st.session_state.journal, new_mark], ignore_index=True)
                 if st.session_state.journal_limit != "Безлимитно":
-                    updated_journal = updated_journal.tail(int(st.session_state.journal_limit))
-                st.session_state.journal = updated_journal
+                    st.session_state.journal = st.session_state.journal.tail(int(st.session_state.journal_limit))
+                
                 st.session_state.journal.to_csv(DB_FILE, index=False)
                 st.toast("Оценка выставлена! 📝"); time.sleep(1); st.rerun()
+
+            st.markdown("---")
+            st.markdown("### 📊 Детальный средний балл учеников по вашим предметам:")
+            df_an = st.session_state.journal.copy()
+            df_an["Оценка_Число"] = pd.to_numeric(df_an["Оценка"], errors="coerce")
+            
+            for s_name in list_st:
+                s_marks = df_an[(df_an["Ученик"] == s_name) & (df_an["Предмет"].isin(my_subjects))]
+                if not s_marks.empty:
+                    st.markdown(f"**👤 {s_name}:**")
+                    sub_avg_t = s_marks.groupby("Предмет")["Оценка_Число"].mean().reset_index()
+                    for _, s_row in sub_avg_t.iterrows():
+                        st.markdown(f"• {s_row['Предмет']}: средний балл **{s_row['Оценка_Число']:.2f}**")
 
             st.markdown("---")
             st.markdown("### 📋 Мобильный лог выставленных вами оценок:")
@@ -456,7 +488,7 @@ elif st.session_state.is_teacher and st.session_state.auth_success:
                 hw_date = st.date_input("Срок сдачи (Дедлайн):", datetime.now())
                 if st.button("Разослать домашку всему классу"):
                     if hw_text.strip():
-                        new_hws = []
+                        new_hws = [] # ИСПРАВЛЕНО: добавлена инициализация пустого списка
                         hw_id = datetime.now().strftime("%Y%m%d_%H%M%S")
                         for s in list_st:
                             new_hws.append({"ID": hw_id, "Предмет": hw_subj, "Учитель": st.session_state.current_user_name, "Задание": hw_text.strip(), "Дедлайн": hw_date.strftime("%Y-%m-%d"), "Ученик": s, "Статус": "Не выполнено", "Ответ": ""})
@@ -478,10 +510,10 @@ elif st.session_state.is_teacher and st.session_state.auth_success:
                             st.session_state.homework_df.to_csv(HOMEWORK_FILE, index=False)
                             new_mark = pd.DataFrame({"Ученик": [row['Ученик']], "Предмет": [row['Предмет']], "Оценка": ["5"], "Замечание": ["Отлично выполнено ДЗ!"], "Учитель": [st.session_state.current_user_name], "Дата": [datetime.now().strftime("%Y-%m-%d")]})
                             
-                            updated_journal = pd.concat([st.session_state.journal, new_mark], ignore_index=True)
+                            st.session_state.journal = pd.concat([st.session_state.journal, new_mark], ignore_index=True)
                             if st.session_state.journal_limit != "Безлимитно":
-                                updated_journal = updated_journal.tail(int(st.session_state.journal_limit))
-                            st.session_state.journal = updated_journal
+                                st.session_state.journal = st.session_state.journal.tail(int(st.session_state.journal_limit))
+                                
                             st.session_state.journal.to_csv(DB_FILE, index=False)
                             st.toast("Задание зачтено, 5 выставлена!"); time.sleep(1); st.rerun()
                         if h_col2.button("🔴 Вернуть на доработку (Переделать)", key=f"rej_{idx}"):
