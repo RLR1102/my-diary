@@ -153,6 +153,7 @@ if "journal_limit" not in st.session_state:
     st.session_state.journal_limit = load_limit_setting(J_LIMIT_FILE)
 if "chat_limit" not in st.session_state:
     st.session_state.chat_limit = load_limit_setting(C_LIMIT_FILE)
+
 if "last_viewed_chat_len" not in st.session_state:
     st.session_state.last_viewed_chat_len = len(st.session_state.chat_df)
 
@@ -173,7 +174,7 @@ def render_school_chat():
         if submit_msg and (user_msg.strip() or uploaded_file is not None):
             media_path = ""
             if uploaded_file is not None:
-                file_ext = os.path.splitext(uploaded_file.name)
+                file_ext = os.path.splitext(uploaded_file.name)[1]
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 media_name = f"{timestamp}_{st.session_state.current_user_name}{file_ext}"
                 media_path = os.path.join(MEDIA_DIR, media_name)
@@ -202,7 +203,7 @@ def render_school_chat():
             else: st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #3498DB;'><span class='chat-user'>👤 {sender}</span>: {msg}</div>", unsafe_allow_html=True)
             
             if media and os.path.exists(media):
-                ext = os.path.splitext(media).lower()
+                ext = os.path.splitext(media)[1].lower()
                 if ext in [".png", ".jpg", ".jpeg"]: st.image(media, use_container_width=True)
                 elif ext in [".mp4", ".mov"]: st.video(media)
                 
@@ -216,7 +217,7 @@ def render_school_chat():
                     st.toast("Сообщение удалено завучем!")
                     time.sleep(0.5)
                     st.rerun()
-    st.markdown("---")
+
     if st.session_state.chat_df.empty: st.caption("_Здесь пока пусто._")
     else:
         # Отображение сообщений с кнопкой удаления для Завуча
