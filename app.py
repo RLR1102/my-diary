@@ -4,14 +4,14 @@ import shutil
 import pandas as pd
 import streamlit as st
 from datetime import datetime
-import extra_streamlit_components as stx  # Подключаем работу с куки
+import extra_streamlit_components as stx
 
 # Настройка интерфейса под мобильные экраны
 st.set_page_config(
     page_title="Электронный Журнал", page_icon="🏫", layout="centered"
 )
 
-# --- МЕНЕДЖЕР КУКИ (ИСПРАВЛЕНО: УБРАН ДЕКОРАТОР КЭША) ---
+# --- МЕНЕДЖЕР КУКИ ---
 def get_cookie_manager():
     return stx.CookieManager()
 
@@ -23,6 +23,7 @@ st.markdown(
     <style>
     #GithubIcon { visibility: hidden !important; display: none !important; }
     .styles_viewerBadge__1yB5_, .viewerBadge_link__1S137, .viewerBadge_text__1JaDK { display: none !important; }
+    [data-testid="stToolbar"] { display: none !important; }
     [data-testid="stSidebar"] { min-width: 250px; max-width: 280px; }
     
     .report-card-header { margin-top: 15px; margin-bottom: 10px; color: var(--text-color); font-weight: bold; font-size: 1.2rem; }
@@ -71,28 +72,44 @@ if not os.path.exists(MEDIA_DIR):
     os.makedirs(MEDIA_DIR)
 
 if "password" in st.secrets:
-    ZAVUCH_PASSWORD = st.secrets["password"]
+    ZAVUCH_PASSWORD = str(st.secrets["password"]).strip()
 else:
     ZAVUCH_PASSWORD = "Armanboss"
 
 def load_data():
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE)
-        df["Оценка"] = df["Оценка"].astype(str)
+        df["Ученик"] = df["Ученик"].astype(str).str.strip()
+        df["Предмет"] = df["Предмет"].astype(str).str.strip()
+        df["Оценка"] = df["Оценка"].astype(str).str.strip()
+        df["Учитель"] = df["Учитель"].astype(str).str.strip()
         if "Дата" not in df.columns: df["Дата"] = datetime.now().strftime("%Y-%m-%d")
         return df
     return pd.DataFrame(columns=["Ученик", "Предмет", "Оценка", "Замечание", "Учитель", "Дата"])
 
+# ИСПРАВЛЕНО: Жесткое приведение паролей и имен к текстовому типу во избежание сбоев проверки
 def load_students():
-    if os.path.exists(STUDENTS_FILE): return pd.read_csv(STUDENTS_FILE)
+    if os.path.exists(STUDENTS_FILE): 
+        df = pd.read_csv(STUDENTS_FILE)
+        df["Ученик"] = df["Ученик"].astype(str).str.strip()
+        df["Пароль"] = df["Пароль"].astype(str).str.strip()
+        return df
     return pd.DataFrame(columns=["Ученик", "Пароль"])
 
 def load_teachers():
-    if os.path.exists(TEACHERS_FILE): return pd.read_csv(TEACHERS_FILE)
+    if os.path.exists(TEACHERS_FILE): 
+        df = pd.read_csv(TEACHERS_FILE)
+        df["Учитель"] = df["Учитель"].astype(str).str.strip()
+        df["Пароль"] = df["Пароль"].astype(str).str.strip()
+        return df
     return pd.DataFrame(columns=["Учитель", "Пароль"])
 
 def load_assignments():
-    if os.path.exists(ASSIGNMENTS_FILE): return pd.read_csv(ASSIGNMENTS_FILE)
+    if os.path.exists(ASSIGNMENTS_FILE): 
+        df = pd.read_csv(ASSIGNMENTS_FILE)
+        df["Предмет"] = df["Предмет"].astype(str).str.strip()
+        df["Учитель"] = df["Учитель"].astype(str).str.strip()
+        return df
     return pd.DataFrame(columns=["Предмет", "Учитель"])
 
 def load_chat():
@@ -112,7 +129,6 @@ if "teachers_df" not in st.session_state: st.session_state.teachers_df = load_te
 if "assignments" not in st.session_state: st.session_state.assignments = load_assignments()
 if "chat_df" not in st.session_state: st.session_state.chat_df = load_chat()
 if "homework_df" not in st.session_state: st.session_state.homework_df = load_homework()
-
 # Инициализация базовых флагов
 for key, default in [("auth_success", False), ("is_zavuch", False), ("is_teacher", False), ("current_user_name", ""), ("user_role_label", "Ученик"), ("chat_limit", "Безлимитно"), ("journal_limit", "Безлимитно")]:
     if key not in st.session_state: st.session_state[key] = default
@@ -120,14 +136,14 @@ for key, default in [("auth_success", False), ("is_zavuch", False), ("is_teacher
 if "last_viewed_chat_len" not in st.session_state:
     st.session_state.last_viewed_chat_len = len(st.session_state.chat_df)
 
-# Пытаемся считать куки «вечного входа» с устройства пользователя
+# Считываем куки «вечного входа»
 saved_user = cookie_manager.get("saved_user")
 saved_role = cookie_manager.get("saved_role")
 
 if saved_user and saved_role and not st.session_state.auth_success:
     st.session_state.auth_success = True
-    st.session_state.current_user_name = saved_user
-    st.session_state.user_role_label = saved_role
+    st.session_state.current_user_name = str(saved_user).strip()
+    st.session_state.user_role_label = str(saved_role).strip()
     if saved_role == "Завуч": st.session_state.is_zavuch = True
     elif saved_role == "Учитель": st.session_state.is_teacher = True
 
@@ -148,7 +164,7 @@ def render_school_chat():
         if submit_msg and (user_msg.strip() or uploaded_file is not None):
             media_path = ""
             if uploaded_file is not None:
-                file_ext = os.path.splitext(uploaded_file.name)
+                file_ext = os.path.splitext(uploaded_file.name)[1]
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 media_name = f"{timestamp}_{st.session_state.current_user_name}{file_ext}"
                 media_path = os.path.join(MEDIA_DIR, media_name)
@@ -174,7 +190,7 @@ def render_school_chat():
             elif role == "Учитель": st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #E74C3C;'><span class='chat-teacher'>👓 Уч. {sender}</span>: {msg}</div>", unsafe_allow_html=True)
             else: st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #3498DB;'><span class='chat-user'>👤 {sender}</span>: {msg}</div>", unsafe_allow_html=True)
             if media and os.path.exists(media):
-                ext = os.path.splitext(media).lower()
+                ext = os.path.splitext(media)[1].lower()
                 if ext in [".png", ".jpg", ".jpeg"]: st.image(media, use_container_width=True)
                 elif ext in [".mp4", ".mov"]: st.video(media)
 
@@ -184,16 +200,10 @@ st.sidebar.title("🔐 Авторизация")
 if st.session_state.auth_success:
     st.sidebar.success(f"Вы вошли как: {st.session_state.current_user_name} ({st.session_state.user_role_label})")
     if st.sidebar.button("🚪 Выйти из аккаунта"):
-        try:
-            cookie_manager.delete("saved_user", key="delete_cookie_user")
-        except Exception:
-            pass
-            
-        try:
-            cookie_manager.delete("saved_role", key="delete_cookie_role")
-        except Exception:
-            pass
-            
+        try: cookie_manager.delete("saved_user", key="delete_cookie_user")
+        except Exception: pass
+        try: cookie_manager.delete("saved_role", key="delete_cookie_role")
+        except Exception: pass
         st.session_state.clear()
         time.sleep(0.3)
         st.rerun()
@@ -202,10 +212,9 @@ else:
 
     if role_choice == "Завуч (Управление)":
         password = st.sidebar.text_input("Пароль Завуча", type="password")
-        if password == ZAVUCH_PASSWORD:
+        if str(password).strip() == ZAVUCH_PASSWORD:
             st.session_state.is_zavuch, st.session_state.is_teacher, st.session_state.auth_success = True, False, True
             st.session_state.current_user_name, st.session_state.user_role_label = "Завуч", "Завуч"
-            # ИСПРАВЛЕНО: Добавлены уникальные ключи для записи куки завуча
             cookie_manager.set("saved_user", "Завуч", max_age=2592000, key="set_cookie_z_user")
             cookie_manager.set("saved_role", "Завуч", max_age=2592000, key="set_cookie_z_role")
             time.sleep(0.3)
@@ -219,16 +228,19 @@ else:
             teacher_sel = st.sidebar.selectbox("Выберите свое имя:", ["-- Выберите --"] + list_teachers)
             if teacher_sel != "-- Выберите --":
                 t_password = st.sidebar.text_input("Введите личный пароль", type="password", key="t_pass")
-                correct_pass = st.session_state.teachers_df[st.session_state.teachers_df["Учитель"] == teacher_sel]["Пароль"].values
-                if len(correct_pass) > 0 and str(t_password) == str(correct_pass):
-                    st.session_state.is_teacher, st.session_state.is_zavuch, st.session_state.auth_success = True, False, True
-                    st.session_state.current_user_name, st.session_state.user_role_label = teacher_sel, "Учитель"
-                    # ИСПРАВЛЕНО: Добавлены уникальные ключи для записи куки учителя
-                    cookie_manager.set("saved_user", teacher_sel, max_age=2592000, key="set_cookie_t_user")
-                    cookie_manager.set("saved_role", "Учитель", max_age=2592000, key="set_cookie_t_role")
-                    time.sleep(0.3)
-                    st.rerun()
-                elif t_password != "": st.sidebar.error("Неверный пароль учителя!")
+                
+                # ИСПРАВЛЕНО: Сверка пароля теперь защищена от разницы типов данных (.astype(str) + очистка пробелов)
+                teacher_row = st.session_state.teachers_df[st.session_state.teachers_df["Учитель"] == teacher_sel]
+                if not teacher_row.empty:
+                    correct_pass = str(teacher_row["Пароль"].values[0]).strip()
+                    if str(t_password).strip() == correct_pass:
+                        st.session_state.is_teacher, st.session_state.is_zavuch, st.session_state.auth_success = True, False, True
+                        st.session_state.current_user_name, st.session_state.user_role_label = teacher_sel, "Учитель"
+                        cookie_manager.set("saved_user", teacher_sel, max_age=2592000, key="set_cookie_t_user")
+                        cookie_manager.set("saved_role", "Учитель", max_age=2592000, key="set_cookie_t_role")
+                        time.sleep(0.3)
+                        st.rerun()
+                    elif t_password != "": st.sidebar.error("Неверный пароль учителя!")
 
     else:
         list_students = st.session_state.students_df["Ученик"].tolist()
@@ -237,19 +249,19 @@ else:
             student_sel = st.sidebar.selectbox("Выберите ваше имя:", ["-- Выберите --"] + list_students)
             if student_sel != "-- Выберите --":
                 s_password = st.sidebar.text_input("Введите личный пароль ученика", type="password", key="s_pass")
-                correct_s_pass = st.session_state.students_df[st.session_state.students_df["Ученик"] == student_sel]["Пароль"].values
-                if len(correct_s_pass) > 0 and str(s_password) == str(correct_s_pass):
-                    st.session_state.auth_success, st.session_state.is_zavuch, st.session_state.is_teacher = True, False, False
-                    st.session_state.current_user_name, st.session_state.user_role_label = student_sel, "Ученик"
-                    # ИСПРАВЛЕНО: Добавлены уникальные ключи для записи куки ученика
-                    cookie_manager.set("saved_user", student_sel, max_age=2592000, key="set_cookie_s_user")
-                    cookie_manager.set("saved_role", "Ученик", max_age=2592000, key="set_cookie_s_role")
-                    time.sleep(0.3)
-                    st.rerun()
-                elif s_password != "": st.sidebar.error("Неверный пароль ученика!")
-
-
-
+                
+                # ИСПРАВЛЕНО: Сверка пароля ученика теперь полностью текстовая
+                student_row = st.session_state.students_df[st.session_state.students_df["Ученик"] == student_sel]
+                if not student_row.empty:
+                    correct_s_pass = str(student_row["Пароль"].values[0]).strip()
+                    if str(s_password).strip() == correct_s_pass:
+                        st.session_state.auth_success, st.session_state.is_zavuch, st.session_state.is_teacher = True, False, False
+                        st.session_state.current_user_name, st.session_state.user_role_label = student_sel, "Ученик"
+                        cookie_manager.set("saved_user", student_sel, max_age=2592000, key="set_cookie_s_user")
+                        cookie_manager.set("saved_role", "Ученик", max_age=2592000, key="set_cookie_s_role")
+                        time.sleep(0.3)
+                        st.rerun()
+                    elif s_password != "": st.sidebar.error("Неверный пароль ученика!")
 if st.session_state.is_zavuch and st.session_state.auth_success:
     st.title("👔 Кабинет Завуча")
     show_chat_notification()
