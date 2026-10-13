@@ -113,7 +113,7 @@ if "assignments" not in st.session_state: st.session_state.assignments = load_as
 if "chat_df" not in st.session_state: st.session_state.chat_df = load_chat()
 if "homework_df" not in st.session_state: st.session_state.homework_df = load_homework()
 
-#保持 Инициализация базовых флагов
+# Инициализация базовых флагов
 for key, default in [("auth_success", False), ("is_zavuch", False), ("is_teacher", False), ("current_user_name", ""), ("user_role_label", "Ученик"), ("chat_limit", "Безлимитно"), ("journal_limit", "Безлимитно")]:
     if key not in st.session_state: st.session_state[key] = default
 
@@ -184,7 +184,6 @@ st.sidebar.title("🔐 Авторизация")
 if st.session_state.auth_success:
     st.sidebar.success(f"Вы вошли как: {st.session_state.current_user_name} ({st.session_state.user_role_label})")
     if st.sidebar.button("🚪 Выйти из аккаунта"):
-        # ИСПРАВЛЕНО: Безопасное удаление куки через try-except для защиты от KeyError
         try:
             cookie_manager.delete("saved_user", key="delete_cookie_user")
         except Exception:
@@ -206,8 +205,9 @@ else:
         if password == ZAVUCH_PASSWORD:
             st.session_state.is_zavuch, st.session_state.is_teacher, st.session_state.auth_success = True, False, True
             st.session_state.current_user_name, st.session_state.user_role_label = "Завуч", "Завуч"
-            cookie_manager.set("saved_user", "Завуч", max_age=2592000)
-            cookie_manager.set("saved_role", "Завуч", max_age=2592000)
+            # ИСПРАВЛЕНО: Добавлены уникальные ключи для записи куки завуча
+            cookie_manager.set("saved_user", "Завуч", max_age=2592000, key="set_cookie_z_user")
+            cookie_manager.set("saved_role", "Завуч", max_age=2592000, key="set_cookie_z_role")
             time.sleep(0.3)
             st.rerun()
         elif password != "": st.sidebar.error("Неверный пароль!")
@@ -220,11 +220,12 @@ else:
             if teacher_sel != "-- Выберите --":
                 t_password = st.sidebar.text_input("Введите личный пароль", type="password", key="t_pass")
                 correct_pass = st.session_state.teachers_df[st.session_state.teachers_df["Учитель"] == teacher_sel]["Пароль"].values
-                if len(correct_pass) > 0 and str(t_password) == str(correct_pass[0]):
+                if len(correct_pass) > 0 and str(t_password) == str(correct_pass):
                     st.session_state.is_teacher, st.session_state.is_zavuch, st.session_state.auth_success = True, False, True
                     st.session_state.current_user_name, st.session_state.user_role_label = teacher_sel, "Учитель"
-                    cookie_manager.set("saved_user", teacher_sel, max_age=2592000)
-                    cookie_manager.set("saved_role", "Учитель", max_age=2592000)
+                    # ИСПРАВЛЕНО: Добавлены уникальные ключи для записи куки учителя
+                    cookie_manager.set("saved_user", teacher_sel, max_age=2592000, key="set_cookie_t_user")
+                    cookie_manager.set("saved_role", "Учитель", max_age=2592000, key="set_cookie_t_role")
                     time.sleep(0.3)
                     st.rerun()
                 elif t_password != "": st.sidebar.error("Неверный пароль учителя!")
@@ -237,14 +238,16 @@ else:
             if student_sel != "-- Выберите --":
                 s_password = st.sidebar.text_input("Введите личный пароль ученика", type="password", key="s_pass")
                 correct_s_pass = st.session_state.students_df[st.session_state.students_df["Ученик"] == student_sel]["Пароль"].values
-                if len(correct_s_pass) > 0 and str(s_password) == str(correct_s_pass[0]):
+                if len(correct_s_pass) > 0 and str(s_password) == str(correct_s_pass):
                     st.session_state.auth_success, st.session_state.is_zavuch, st.session_state.is_teacher = True, False, False
                     st.session_state.current_user_name, st.session_state.user_role_label = student_sel, "Ученик"
-                    cookie_manager.set("saved_user", student_sel, max_age=2592000)
-                    cookie_manager.set("saved_role", "Ученик", max_age=2592000)
+                    # ИСПРАВЛЕНО: Добавлены уникальные ключи для записи куки ученика
+                    cookie_manager.set("saved_user", student_sel, max_age=2592000, key="set_cookie_s_user")
+                    cookie_manager.set("saved_role", "Ученик", max_age=2592000, key="set_cookie_s_role")
                     time.sleep(0.3)
                     st.rerun()
                 elif s_password != "": st.sidebar.error("Неверный пароль ученика!")
+
 
 
 if st.session_state.is_zavuch and st.session_state.auth_success:
