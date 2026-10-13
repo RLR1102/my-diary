@@ -208,7 +208,9 @@ def render_school_chat():
                 elif ext in [".mp4", ".mov"]: st.video(media)
                 
             if st.session_state.is_zavuch:
-                if st.button("🗑️ Удалить сообщение", key=f"del_msg_{idx}"):
+                # ИСПРАВЛЕНО: Ключ кнопки теперь абсолютно уникален благодаря привязке к роли/имени сессии
+                button_key = f"del_msg_{idx}_{st.session_state.current_user_name}_{st.session_state.user_role_label}"
+                if st.button("🗑️ Удалить сообщение", key=button_key):
                     if media and os.path.exists(media):
                         try: os.remove(media)
                         except Exception: pass
@@ -217,6 +219,7 @@ def render_school_chat():
                     st.toast("Сообщение удалено завучем!")
                     time.sleep(0.5)
                     st.rerun()
+
 
     if st.session_state.chat_df.empty: st.caption("_Здесь пока пусто._")
     else:
