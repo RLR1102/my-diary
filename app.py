@@ -145,7 +145,7 @@ if "assignments" not in st.session_state: st.session_state.assignments = load_as
 if "chat_df" not in st.session_state: st.session_state.chat_df = load_chat()
 if "homework_df" not in st.session_state: st.session_state.homework_df = load_homework()
 
-# Инициализация базовых флагов считыванием сохраненных лимитов из файлов
+# Инициализация базовых флагов
 for key, default in [("auth_success", False), ("is_zavuch", False), ("is_teacher", False), ("current_user_name", ""), ("user_role_label", "Ученик")]:
     if key not in st.session_state: st.session_state[key] = default
 
@@ -153,7 +153,6 @@ if "journal_limit" not in st.session_state:
     st.session_state.journal_limit = load_limit_setting(J_LIMIT_FILE)
 if "chat_limit" not in st.session_state:
     st.session_state.chat_limit = load_limit_setting(C_LIMIT_FILE)
-
 if "last_viewed_chat_len" not in st.session_state:
     st.session_state.last_viewed_chat_len = len(st.session_state.chat_df)
 
@@ -174,7 +173,7 @@ def render_school_chat():
         if submit_msg and (user_msg.strip() or uploaded_file is not None):
             media_path = ""
             if uploaded_file is not None:
-                file_ext = os.path.splitext(uploaded_file.name)[1]
+                file_ext = os.path.splitext(uploaded_file.name)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 media_name = f"{timestamp}_{st.session_state.current_user_name}{file_ext}"
                 media_path = os.path.join(MEDIA_DIR, media_name)
@@ -182,8 +181,9 @@ def render_school_chat():
             
             new_post = pd.DataFrame({"Отправитель": [st.session_state.current_user_name], "Роль": [st.session_state.user_role_label], "Сообщение": [user_msg.strip()], "Медиа": [media_path]})
             
+            # ЖЕСТКАЯ ФИКСАЦИЯ СРЕЗА ЧАТА
             st.session_state.chat_df = pd.concat([st.session_state.chat_df, new_post], ignore_index=True)
-            if st.session_state.chat_limit != "Безлимитно":
+            if str(st.session_state.chat_limit) != "Безлимитно":
                 st.session_state.chat_df = st.session_state.chat_df.tail(int(st.session_state.chat_limit))
                 
             st.session_state.chat_df.to_csv(CHAT_FILE, index=False)
@@ -203,12 +203,11 @@ def render_school_chat():
             else: st.markdown(f"<div class='chat-bubble' style='border-left: 5px solid #3498DB;'><span class='chat-user'>👤 {sender}</span>: {msg}</div>", unsafe_allow_html=True)
             
             if media and os.path.exists(media):
-                ext = os.path.splitext(media)[1].lower()
+                ext = os.path.splitext(media).lower()
                 if ext in [".png", ".jpg", ".jpeg"]: st.image(media, use_container_width=True)
                 elif ext in [".mp4", ".mov"]: st.video(media)
                 
             if st.session_state.is_zavuch:
-                # ИСПРАВЛЕНО: Ключ кнопки теперь абсолютно уникален благодаря привязке к роли/имени сессии
                 button_key = f"del_msg_{idx}_{st.session_state.current_user_name}_{st.session_state.user_role_label}"
                 if st.button("🗑️ Удалить сообщение", key=button_key):
                     if media and os.path.exists(media):
@@ -219,7 +218,6 @@ def render_school_chat():
                     st.toast("Сообщение удалено завучем!")
                     time.sleep(0.5)
                     st.rerun()
-
 
     if st.session_state.chat_df.empty: st.caption("_Здесь пока пусто._")
     else:
