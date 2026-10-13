@@ -11,8 +11,7 @@ st.set_page_config(
     page_title="Электронный Журнал", page_icon="🏫", layout="centered"
 )
 
-# --- МЕНЕДЖЕР КУКИ (АВТОФОРМАТИРОВАНИЕ ЗАПОМИНАНИЯ) ---
-@st.cache_resource
+# --- МЕНЕДЖЕР КУКИ (ИСПРАВЛЕНО: УБРАН ДЕКОРАТОР КЭША) ---
 def get_cookie_manager():
     return stx.CookieManager()
 
@@ -113,6 +112,7 @@ if "teachers_df" not in st.session_state: st.session_state.teachers_df = load_te
 if "assignments" not in st.session_state: st.session_state.assignments = load_assignments()
 if "chat_df" not in st.session_state: st.session_state.chat_df = load_chat()
 if "homework_df" not in st.session_state: st.session_state.homework_df = load_homework()
+
 # Инициализация базовых флагов
 for key, default in [("auth_success", False), ("is_zavuch", False), ("is_teacher", False), ("current_user_name", ""), ("user_role_label", "Ученик"), ("chat_limit", "Безлимитно"), ("journal_limit", "Безлимитно")]:
     if key not in st.session_state: st.session_state[key] = default
