@@ -17,15 +17,19 @@ def get_cookie_manager():
 
 cookie_manager = get_cookie_manager()
 
-# --- УЛЬТРА-АДАПТИВНЫЙ SMARTPHONE СТИЛЬ ДЛЯ СВЕТЛОЙ И ТЕМНОЙ ТЕМЫ ---
+# --- АДАПТИВНЫЙ SMARTPHONE СТИЛЬ (ИСПРАВЛЕНО: ТРИ ПОЛОСКИ СЛЕВА ВЕРНУЛИСЬ!) ---
 st.markdown(
     """
     <style>
+    /* ТОЧЕЧНО СКРЫВАЕМ ТОЛЬКО ЗНАЧОК GITHUB И ВОДЯНОЙ ЗНАК STREAMLIT */
     #GithubIcon { visibility: hidden !important; display: none !important; }
     .styles_viewerBadge__1yB5_, .viewerBadge_link__1S137, .viewerBadge_text__1JaDK { display: none !important; }
-    [data-testid="stToolbar"] { display: none !important; }
-    [data-testid="stSidebar"] { min-width: 250px; max-width: 280px; }
     
+    /* ОСТАВЛЯЕМ ВЕРХНЮЮ ПАНЕЛЬ ВИДИМОЙ, ЧТОБЫ ТРИ ПОЛОСКИ (☰) НЕ ИСЧЕЗАЛИ НА ТЕЛЕФОНАХ */
+    [data-testid="stHeader"] { background-color: transparent !important; }
+    
+    /* Стили элементов дневника */
+    [data-testid="stSidebar"] { min-width: 250px; max-width: 280px; }
     .report-card-header { margin-top: 15px; margin-bottom: 10px; color: var(--text-color); font-weight: bold; font-size: 1.2rem; }
     .grade-badge { font-size: 18px; letter-spacing: 2px; color: #2C3E50; font-weight: bold; background-color: #F8F9FA; padding: 3px 8px; border-radius: 5px; border: 1px solid #E2E8F0; }
     
@@ -75,6 +79,7 @@ if "password" in st.secrets:
     ZAVUCH_PASSWORD = str(st.secrets["password"]).strip()
 else:
     ZAVUCH_PASSWORD = "Armanboss"
+
 # --- ФАЙЛЫ НАСТРОЕК ЛИМИТОВ ---
 J_LIMIT_FILE = "journal_limit.txt"
 C_LIMIT_FILE = "chat_limit.txt"
